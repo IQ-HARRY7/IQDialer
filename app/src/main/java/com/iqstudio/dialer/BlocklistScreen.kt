@@ -1,11 +1,11 @@
 //**************************************************
 // *
 // * Copyright© IQ-STUDIO 2026 (ptv limited)
-// * IQDialer project uses GPL3 (or later). 
-// * 
+// * IQDialer project uses GPL3 (or later).
+// *
 //**************************************************
 
-// specific screen for Blacklist contacts. all side features will be included in one file in future. have some UI/UX issues, need to be fixed. 
+// specific screen for Blacklist contacts. all side features will be included in one file in future. have some UI/UX issues, need to be fixed.
 
 package com.iqstudio.dialer
 
@@ -51,7 +51,7 @@ private fun unblockNumber(context: Context, id: Long) {
     context.contentResolver.delete(uri, null, null)
 }
 
-// ofc, you can't skip this! else everything will be useless anyways. 
+// ofc, you can't skip this! else everything will be useless anyways.
 
 @Composable
 fun BlocklistScreen(onBack: () -> Unit) {
@@ -65,14 +65,13 @@ fun BlocklistScreen(onBack: () -> Unit) {
         loaded = true
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-            }
+            GlassIconButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Blocked numbers", fontSize = 20.sp, color = TextPrimary)
         }
 
@@ -92,12 +91,15 @@ fun BlocklistScreen(onBack: () -> Unit) {
                     ListItem(
                         headlineContent = { Text(entry.number, color = TextPrimary) },
                         trailingContent = {
-                            IconButton(onClick = {
-                                unblockNumber(context, entry.id)
-                                reloadKey++
-                            }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Unblock", tint = CallRed)
-                            }
+                            GlassIconButton(
+                                icon = Icons.Filled.Delete,
+                                contentDescription = "Unblock",
+                                tint = CallRed,
+                                onClick = {
+                                    unblockNumber(context, entry.id)
+                                    reloadKey++
+                                }
+                            )
                         }
                     )
                     HorizontalDivider()

@@ -1,11 +1,11 @@
 //**************************************************
 // *
 // * Copyright© IQ-STUDIO 2026 (ptv limited)
-// * IQDialer project uses GPL3 (or later). 
-// * 
+// * IQDialer project uses GPL3 (or later).
+// *
 //**************************************************
 
-// Second interface of Dialer. <set view> 
+// Second interface of Dialer. <set view>
 
 package com.iqstudio.dialer
 
@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -69,13 +68,17 @@ private fun loadContacts(context: Context): List<ContactEntry> {
 }
 
 @Composable
-fun ContactsScreen() {
+fun ContactsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     var contacts by remember { mutableStateOf<List<ContactEntry>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var selectedNumber by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+
+    val nested = showSettings || selectedNumber != null
+    LaunchedEffect(nested) { onNestedScreenChange(nested) }
+    DisposableEffect(Unit) { onDispose { onNestedScreenChange(false) } }
 
     LaunchedEffect(Unit) {
         contacts = withContext(Dispatchers.IO) { loadContacts(context) }
@@ -100,16 +103,18 @@ fun ContactsScreen() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Contacts", fontSize = 26.sp)
-            IconButton(onClick = { showSettings = true }) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
-            }
+            GlassIconButton(
+                icon = Icons.Filled.Settings,
+                contentDescription = "Settings",
+                onClick = { showSettings = true }
+            )
         }
 
         OutlinedTextField(

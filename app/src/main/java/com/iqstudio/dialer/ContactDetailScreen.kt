@@ -1,8 +1,8 @@
 //**************************************************
 // *
 // * Copyright© IQ-STUDIO 2026 (ptv limited)
-// * IQDialer project uses GPL3 (or later). 
-// * 
+// * IQDialer project uses GPL3 (or later).
+// *
 //**************************************************
 
 package com.iqstudio.dialer
@@ -18,11 +18,10 @@ import android.provider.ContactsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
@@ -33,7 +32,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.*
 import kotlinx.coroutines.Dispatchers
@@ -103,7 +101,6 @@ private fun shareNumber(context: Context, name: String?, number: String) {
     context.startActivity(Intent.createChooser(intent, "Share"))
 }
 
-// wish. 
 private fun setContactRingtone(context: Context, contactId: Long, ringtoneUri: Uri?) {
     val values = ContentValues()
     values.put(ContactsContract.Contacts.CUSTOM_RINGTONE, ringtoneUri?.toString())
@@ -111,13 +108,11 @@ private fun setContactRingtone(context: Context, contactId: Long, ringtoneUri: U
     context.contentResolver.update(uri, values, null, null)
 }
 
-// WRITE_ACCESS manage - obv
 private fun deleteContact(context: Context, contactId: Long) {
     val uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contactId.toString())
     context.contentResolver.delete(uri, null, null)
 }
 
-// requires BlockedNumberContract.canCurrentUserBlockNumbers(context)
 private fun blockNumber(context: Context, number: String) {
     if (!BlockedNumberContract.canCurrentUserBlockNumbers(context)) return
     val values = ContentValues()
@@ -155,19 +150,24 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
         isBlocked = withContext(Dispatchers.IO) { BlockedNumberContract.isBlocked(context, phoneNumber) }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-            }
+            GlassIconButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
             Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "More options")
-                }
+                GlassIconButton(
+                    icon = Icons.Filled.MoreVert,
+                    contentDescription = "More options",
+                    onClick = { menuExpanded = true }
+                )
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     if (lookup.contactId == null) {
                         DropdownMenuItem(
@@ -246,47 +246,50 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(phoneNumber, fontSize = 16.sp, color = TextPrimary)
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(CallGreen)
-                    .clickable { placeCall(context, phoneNumber) },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Call, contentDescription = "Call", tint = Color.White)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-        HorizontalDivider()
-
-        Text(
-            "Call history",
-            fontSize = 14.sp,
-            color = TextSecondary,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-        )
-
-        if (history.isEmpty()) {
-            Text("No calls with this number yet", color = TextSecondary, modifier = Modifier.padding(horizontal = 20.dp))
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(history) { entry ->
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
-                        Text(callTypeLabel(entry.type), fontSize = 15.sp, color = TextPrimary)
-                        Text(formatter.format(java.util.Date(entry.date)), fontSize = 12.sp, color = TextSecondary)
-                    }
+        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+            GlassCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(phoneNumber, fontSize = 16.sp, color = TextPrimary)
+                    GlassIconButton(
+                        icon = Icons.Filled.Call,
+                        contentDescription = "Call",
+                        tint = CallGreen,
+                        onClick = { placeCall(context, phoneNumber) }
+                    )
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GlassCard {
+                Text(
+                    "Call history",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                )
+                if (history.isEmpty()) {
+                    Text(
+                        "No calls with this number yet",
+                        color = TextSecondary,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                    )
+                } else {
+                    history.forEach { entry ->
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
+                            Text(callTypeLabel(entry.type), fontSize = 15.sp, color = TextPrimary)
+                            Text(formatter.format(java.util.Date(entry.date)), fontSize = 12.sp, color = TextSecondary)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
-
-// YAY! Finally! 

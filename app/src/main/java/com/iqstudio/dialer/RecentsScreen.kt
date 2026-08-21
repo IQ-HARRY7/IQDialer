@@ -1,12 +1,12 @@
 //**************************************************
 // *
 // * Copyright© IQ-STUDIO 2026 (ptv limited)
-// * IQDialer project uses GPL3 (or later). 
-// * 
+// * IQDialer project uses GPL3 (or later).
+// *
 //**************************************************
 
-// 1st screen. 
-// working fine, but need to make it more smooth & animated. 
+// 1st screen.
+// working fine, but need to make it more smooth & animated.
 
 package com.iqstudio.dialer
 
@@ -14,8 +14,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CallLog
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,7 +23,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -40,28 +37,16 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-data class GroupedCallLogEntry(
-    val number: String,
-    val name: String?,
-    val type: Int,
-    val date: Long,
-    val count: Int
-)
-
 private fun loadCallLog(context: Context): List<CallLogEntry> {
-    if (!hasCallLogPermission(context)) return emptyList()
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
+        return emptyList()
+    }
     val entries = mutableListOf<CallLogEntry>()
-    val projection = arrayOf(
-        CallLog.Calls.NUMBER,
-        CallLog.Calls.CACHED_NAME,
-        CallLog.Calls.TYPE,
-        CallLog.Calls.DATE
-    )
     context.contentResolver.query(
         CallLog.Calls.CONTENT_URI,
-        projection,
+        arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME, CallLog.Calls.TYPE, CallLog.Calls.DATE),
         null, null,
-        CallLog.Calls.DATE + " DESC LIMIT 200"
+        CallLog.Calls.DATE + " DESC"
     )?.use { cursor ->
         val numberIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
         val nameIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
@@ -81,17 +66,25 @@ private fun loadCallLog(context: Context): List<CallLogEntry> {
     return entries
 }
 
-private fun groupConsecutive(entries: List<CallLogEntry>): List<GroupedCallLogEntry> {
-    val grouped = mutableListOf<GroupedCallLogEntry>()
+private data class GroupedEntry(
+    val number: String,
+    val name: String?,
+    val type: Int,
+    val date: Long,
+    val count: Int
+)
+
+private fun groupConsecutive(entries: List<CallLogEntry>): List<GroupedEntry> {
+    val result = mutableListOf<GroupedEntry>()
     for (entry in entries) {
-        val last = grouped.lastOrNull()
+        val last = result.lastOrNull()
         if (last != null && last.number == entry.number) {
-            grouped[grouped.lastIndex] = last.copy(count = last.count + 1)
+            result[result.size - 1] = last.copy(count = last.count + 1)
         } else {
-            grouped.add(GroupedCallLogEntry(entry.number, entry.name, entry.type, entry.date, 1))
+            result.add(GroupedEntry(entry.number, entry.name, entry.type, entry.date, 1))
         }
     }
-    return grouped
+    return result
 }
 
 private fun callDirectionGlyph(type: Int): String = when (type) {
@@ -110,7 +103,7 @@ private fun callDirectionColor(type: Int): Color = when (type) {
 }
 
 @Composable
-fun RecentsScreen(refreshKey: Int) {
+fun RecentsScreen(refreshKey: Int, onNestedScreenChange: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     var rawEntries by remember { mutableStateOf<List<CallLogEntry>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
@@ -118,6 +111,10 @@ fun RecentsScreen(refreshKey: Int) {
     var selectedNumber by remember { mutableStateOf<String?>(null) }
     var showDialpad by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+
+    val nested = showSettings || selectedNumber != null
+    LaunchedEffect(nested) { onNestedScreenChange(nested) }
+    DisposableEffect(Unit) { onDispose { onNestedScreenChange(false) } }
 
     LaunchedEffect(refreshKey) {
         rawEntries = withContext(Dispatchers.IO) { loadCallLog(context) }
@@ -144,7 +141,7 @@ fun RecentsScreen(refreshKey: Int) {
     }
     val formatter = java.text.SimpleDateFormat("MMM d, " + AppPrefs.timePattern(context), java.util.Locale.getDefault())
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -152,9 +149,11 @@ fun RecentsScreen(refreshKey: Int) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Recents", fontSize = 26.sp)
-                IconButton(onClick = { showSettings = true }) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
-                }
+                GlassIconButton(
+                    icon = Icons.Filled.Settings,
+                    contentDescription = "Settings",
+                    onClick = { showSettings = true }
+                )
             }
 
             OutlinedTextField(
@@ -181,7 +180,12 @@ fun RecentsScreen(refreshKey: Int) {
                     )
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                // contentPadding bottom clears the floating FAB -- without this,
+                // whatever row lands at that scroll position sits behind it.
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 88.dp)
+                ) {
                     items(filtered) { entry ->
                         val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
                         Row(
@@ -229,13 +233,16 @@ fun RecentsScreen(refreshKey: Int) {
             }
         }
 
-        FloatingActionButton(
-            onClick = { showDialpad = !showDialpad },
-            containerColor = CallGreen,
-            contentColor = Color.White,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+                .size(56.dp)
+                .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
+                .pressScale(onClick = { showDialpad = !showDialpad }),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.Call, contentDescription = "Dialpad")
+            Icon(Icons.Filled.Call, contentDescription = "Dialpad", tint = Color.White)
         }
 
         if (showDialpad) {
@@ -261,74 +268,56 @@ private val DIAL_ROWS = listOf(
 
 @Composable
 private fun EmbeddedDialpad(onCall: (String) -> Unit, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
     var number by remember { mutableStateOf("") }
-
-    val requestCallPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) onCall(number) }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(SurfaceCard)
-            .padding(top = 16.dp, bottom = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(SurfaceCard, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .padding(16.dp)
     ) {
-        Text(number.ifEmpty { " " }, fontSize = 28.sp, color = TextPrimary, modifier = Modifier.padding(bottom = 12.dp))
-
+        Text(
+            number.ifEmpty { " " },
+            fontSize = 24.sp,
+            color = TextPrimary,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+        )
         DIAL_ROWS.forEach { row ->
-            Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
                 row.forEach { key ->
-                    Box(
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
-                            .padding(6.dp)
                             .size(70.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(SurfaceCardHigh)
                             .pressScale { number += key.digit },
-                        contentAlignment = Alignment.Center
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(key.digit, fontSize = 24.sp, color = TextPrimary)
-                            if (key.sub.isNotEmpty()) {
-                                Text(key.sub, fontSize = 9.sp, color = TextSecondary)
-                            }
+                        Text(key.digit, fontSize = 22.sp, color = TextPrimary)
+                        if (key.sub.isNotEmpty()) {
+                            Text(key.sub, fontSize = 10.sp, color = TextSecondary)
                         }
                     }
                 }
             }
         }
-
-        Row(modifier = Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.End
+        ) {
             Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(CircleShape)
-                    .background(CallGreen)
-                    .clickable {
-                        if (number.isNotEmpty()) {
-                            val granted = ContextCompat.checkSelfPermission(
-                                context, Manifest.permission.CALL_PHONE
-                            ) == PackageManager.PERMISSION_GRANTED
-                            if (granted) onCall(number)
-                            else requestCallPermission.launch(Manifest.permission.CALL_PHONE)
-                        }
-                    },
+                    .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
+                    .pressScale(onClick = { if (number.isNotEmpty()) onCall(number) }),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Filled.Call, contentDescription = "Call", tint = Color.White)
             }
-            if (number.isNotEmpty()) {
-                Spacer(modifier = Modifier.width(24.dp))
-                Text(
-                    "Delete",
-                    color = TextSecondary,
-                    modifier = Modifier.clickable { number = number.dropLast(1) }
-                )
-            }
         }
     }
 }
-
-// 1st screen. 

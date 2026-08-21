@@ -1,8 +1,8 @@
 //**************************************************
 // *
 // * Copyright© IQ-STUDIO 2026 (ptv limited)
-// * IQDialer project uses GPL3 (or later). 
-// * 
+// * IQDialer project uses GPL3 (or later).
+// *
 //**************************************************
 package com.iqstudio.dialer
 
@@ -23,6 +23,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -106,73 +107,77 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-            }
+            GlassIconButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Advanced settings", fontSize = 20.sp, color = TextPrimary)
         }
-        HorizontalDivider()
 
-        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("Call screen backgrounds", fontSize = 16.sp, color = TextPrimary)
-                Text(
-                    "Shown on the incoming/active call screen when the caller has no saved contact photo. Add photos or videos -- one is picked at random for each call. A video with sound can replace the ringtone entirely unless you mute it below.",
-                    fontSize = 12.sp,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
-                )
-
-                backgrounds.forEach { item ->
-                    BackgroundRow(
-                        item = item,
-                        onToggleMute = { muted ->
-                            AppPrefs.updateBackground(context, item.copy(muted = muted))
-                            backgrounds = AppPrefs.backgrounds(context)
-                        },
-                        onEdit = { editingItem = item },
-                        onRemove = {
-                            AppPrefs.removeBackground(context, item.uri)
-                            backgrounds = AppPrefs.backgrounds(context)
-                        }
+        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            GlassCard {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Call screen backgrounds", fontSize = 16.sp, color = TextPrimary)
+                    Text(
+                        "Shown on the incoming/active call screen when the caller has no saved contact photo. Add photos or videos -- one is picked at random for each call. A video with sound can replace the ringtone entirely unless you mute it below.",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
                     )
-                    HorizontalDivider()
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(onClick = {
-                    pickMedia.launch(
-                        PickVisualMediaRequest.Builder()
-                            .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                            .build()
-                    )
-                }) { Text(if (backgrounds.isEmpty()) "Add photos or videos" else "Add more") }
-            }
-
-            HorizontalDivider()
-
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("Ringtone", fontSize = 16.sp, color = TextPrimary)
-                Text(
-                    "Applies system-wide when the device allows it; otherwise remembered by IQ Dialer only.",
-                    fontSize = 12.sp,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-                )
-                OutlinedButton(onClick = {
-                    val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, AppPrefs.ringtoneUri(context))
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                    backgrounds.forEach { item ->
+                        BackgroundRow(
+                            item = item,
+                            onToggleMute = { muted ->
+                                AppPrefs.updateBackground(context, item.copy(muted = muted))
+                                backgrounds = AppPrefs.backgrounds(context)
+                            },
+                            onEdit = { editingItem = item },
+                            onRemove = {
+                                AppPrefs.removeBackground(context, item.uri)
+                                backgrounds = AppPrefs.backgrounds(context)
+                            }
+                        )
+                        HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
                     }
-                    ringtoneLauncher.launch(intent)
-                }) { Text("Choose ringtone") }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    GlassButton(onClick = {
+                        pickMedia.launch(
+                            PickVisualMediaRequest.Builder()
+                                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                .build()
+                        )
+                    }) { Text(if (backgrounds.isEmpty()) "Add photos or videos" else "Add more", color = Color.White) }
+                }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GlassCard {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Ringtone", fontSize = 16.sp, color = TextPrimary)
+                    Text(
+                        "Applies system-wide when the device allows it; otherwise remembered by IQ Dialer only.",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                    )
+                    GlassOutlinedButton(onClick = {
+                        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, AppPrefs.ringtoneUri(context))
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                        }
+                        ringtoneLauncher.launch(intent)
+                    }) { Text("Choose ringtone", color = Color.White) }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -218,19 +223,19 @@ private fun BackgroundRow(
                     Switch(
                         checked = item.muted,
                         onCheckedChange = onToggleMute,
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GlassTint),
                         modifier = Modifier.scale(0.7f)
                     )
                 }
             }
         }
-        TextButton(onClick = onEdit) { Text("Edit fit") }
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Filled.Close, contentDescription = "Remove", tint = TextSecondary)
-        }
+        GlassChip(text = "Edit fit", onClick = onEdit)
+        Spacer(modifier = Modifier.width(6.dp))
+        GlassIconButton(icon = Icons.Filled.Close, contentDescription = "Remove", tint = CallRed, onClick = onRemove)
     }
 }
 
-// ZoomIn/Zoomout feature not implemented yet properly, but soon, this is in development. 
+// ZoomIn/Zoomout feature not implemented yet properly, but soon, this is in development.
 @Composable
 private fun BackgroundFitEditor(
     item: BackgroundItem,
@@ -255,14 +260,13 @@ private fun BackgroundFitEditor(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Column(modifier = Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onCancel) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Cancel", tint = Color.White)
-            }
+            GlassIconButton(icon = Icons.Filled.ArrowBack, contentDescription = "Cancel", onClick = onCancel)
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Adjust fit", fontSize = 18.sp, color = Color.White)
         }
 
@@ -313,8 +317,10 @@ private fun BackgroundFitEditor(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            OutlinedButton(onClick = onCancel) { Text("Cancel") }
-            Button(onClick = { onSave(item.copy(scale = scale, offsetX = offsetX, offsetY = offsetY)) }) { Text("Save") }
+            GlassOutlinedButton(onClick = onCancel) { Text("Cancel", color = Color.White) }
+            GlassButton(onClick = { onSave(item.copy(scale = scale, offsetX = offsetX, offsetY = offsetY)) }) {
+                Text("Save", color = Color.White)
+            }
         }
     }
 }
