@@ -165,28 +165,39 @@ fun VideoBackgroundPlayer(
     )
 }
 
-val GlassTint = Color(0xFF4D8EFF)
+// White, not blue -- kept the name GlassTint (used as the default tint
+// param everywhere) rather than renaming it across every file, but the
+// value is now white. Everything built on liquidGlass() inherits this
+// automatically since none of them hardcode a color. Red/green stay as
+// explicit overrides at their own call sites (delete, call, FAB), never
+// defaulted, so they're untouched by this change.
+val GlassTint = Color.White
+
+// Dark content color for anything sitting on a light/white glass surface
+// (the selected nav pill) -- matches the app's own background color for a
+// clean cutout look, and is the actual fix for white-on-white being
+// invisible.
+val DarkGlassContent = Color(0xFF101415)
 
 // No backdrop blur -- native Compose has no first-party way to blur
-// content behind a different composable on minSdk 29, and the libraries
-// that would add it are either alpha-only or not yet verified enough to
-// depend on. Gradient + border are tuned to fake depth instead: brighter
-// top fading to darker bottom (light catching a curved surface), and a
-// diagonal-gradient border brightest at the top-left corner (where a
-// light source would actually hit), rather than one flat tint and a
-// uniform-brightness edge.
+// content behind a different composable on minSdk 29, and the available
+// libraries are alpha-stage across the board right now. Gradient + border
+// fake depth instead: brighter top fading to darker bottom, and a
+// diagonal-gradient border brightest at the top-left corner. White reads
+// as glass at meaningfully lower opacity than the old blue did -- these
+// defaults are tuned for white specifically, not just carried over.
 fun Modifier.liquidGlass(
     shape: Shape = RoundedCornerShape(28.dp),
     tint: Color = GlassTint,
-    tintAlpha: Float = 0.55f
+    tintAlpha: Float = 0.18f
 ): Modifier = this
     .clip(shape)
     .background(
         Brush.verticalGradient(
             listOf(
-                tint.copy(alpha = (tintAlpha + 0.20f).coerceAtMost(1f)),
+                tint.copy(alpha = (tintAlpha + 0.14f).coerceAtMost(1f)),
                 tint.copy(alpha = tintAlpha),
-                tint.copy(alpha = (tintAlpha - 0.10f).coerceAtLeast(0.05f))
+                tint.copy(alpha = (tintAlpha - 0.06f).coerceAtLeast(0.03f))
             )
         )
     )
@@ -195,7 +206,7 @@ fun Modifier.liquidGlass(
         brush = Brush.linearGradient(
             listOf(
                 Color.White.copy(alpha = 0.60f),
-                Color.White.copy(alpha = 0.08f),
+                Color.White.copy(alpha = 0.10f),
                 Color.White.copy(alpha = 0.30f)
             )
         ),
@@ -231,7 +242,7 @@ fun GlassButton(
 ) {
     Row(
         modifier = modifier
-            .liquidGlass(shape = RoundedCornerShape(50), tint = tint, tintAlpha = 0.75f)
+            .liquidGlass(shape = RoundedCornerShape(50), tint = tint, tintAlpha = 0.28f)
             .pressScale(onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.Center,
@@ -250,7 +261,7 @@ fun GlassOutlinedButton(
 ) {
     Row(
         modifier = modifier
-            .liquidGlass(shape = RoundedCornerShape(50), tint = tint, tintAlpha = 0.18f)
+            .liquidGlass(shape = RoundedCornerShape(50), tint = tint, tintAlpha = 0.10f)
             .pressScale(onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.Center,
@@ -269,7 +280,7 @@ fun GlassChip(
 ) {
     Box(
         modifier = modifier
-            .liquidGlass(shape = RoundedCornerShape(50), tint = tint, tintAlpha = 0.35f)
+            .liquidGlass(shape = RoundedCornerShape(50), tint = tint, tintAlpha = 0.16f)
             .pressScale(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
@@ -280,21 +291,42 @@ fun GlassChip(
 
 // Glass container for grouping content (not a button) -- deliberately
 // lower opacity than the interactive components above. Opacity is the
-// signal for tappability across this whole system: high-opacity glass
-// means "you can press this," low-opacity glass means "this is grouped
-// content." Keeping that distinction consistent matters more here than
-// making every surface look identical.
+// signal for tappability across this whole system: higher-opacity glass
+// means "you can press this," lower-opacity glass means "this is grouped
+// content."
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
     tint: Color = GlassTint,
-    tintAlpha: Float = 0.14f,
+    tintAlpha: Float = 0.07f,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .liquidGlass(shape = RoundedCornerShape(20.dp), tint = tint, tintAlpha = tintAlpha),
+        content = content
+    )
+}
+
+// Floating glass row for list items (Recents/Contacts) -- same idea as
+// GlassCard but sized and padded for a single clickable row rather than a
+// content section.
+@Composable
+fun GlassRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = GlassTint,
+    content: @Composable RowScope.() -> Unit
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 5.dp)
+            .liquidGlass(shape = RoundedCornerShape(16.dp), tint = tint, tintAlpha = 0.09f)
+            .pressScale(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
         content = content
     )
 }

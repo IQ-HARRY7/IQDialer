@@ -121,7 +121,7 @@ private fun RowScope.FloatingNavItem(
             .padding(6.dp)
             .clip(RoundedCornerShape(24.dp))
             .then(
-                if (selected) Modifier.background(GlassTint) else Modifier
+                if (selected) Modifier.background(Color.White.copy(alpha = 0.85f)) else Modifier
             )
             .pressScale(onClick = onClick)
             .padding(vertical = 10.dp),
@@ -131,12 +131,12 @@ private fun RowScope.FloatingNavItem(
         Icon(
             icon,
             contentDescription = label,
-            tint = if (selected) Color.White else TextSecondary,
+            tint = if (selected) DarkGlassContent else Color.White.copy(alpha = 0.85f),
             modifier = Modifier.size(22.dp)
         )
         if (selected) {
             Spacer(Modifier.width(6.dp))
-            Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = DarkGlassContent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

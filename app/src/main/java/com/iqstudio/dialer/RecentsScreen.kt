@@ -15,7 +15,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CallLog
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -180,23 +179,13 @@ fun RecentsScreen(refreshKey: Int, onNestedScreenChange: (Boolean) -> Unit = {})
                     )
                 }
             } else {
-                // contentPadding bottom clears the floating FAB -- without this,
-                // whatever row lands at that scroll position sits behind it.
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 88.dp)
                 ) {
                     items(filtered) { entry ->
                         val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 3.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable { selectedNumber = entry.number }
-                                .padding(horizontal = 8.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        GlassRow(onClick = { selectedNumber = entry.number }) {
                             ContactAvatar(name = entry.name)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -227,7 +216,6 @@ fun RecentsScreen(refreshKey: Int, onNestedScreenChange: (Boolean) -> Unit = {})
                                 color = TextSecondary
                             )
                         }
-                        HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
                     }
                 }
             }

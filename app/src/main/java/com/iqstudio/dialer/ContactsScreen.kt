@@ -12,7 +12,6 @@ package com.iqstudio.dialer
 import android.content.Context
 import android.provider.ContactsContract
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -143,15 +142,7 @@ fun ContactsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(filtered) { contact ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 3.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { if (contact.number != null) selectedNumber = contact.number }
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    GlassRow(onClick = { if (contact.number != null) selectedNumber = contact.number }) {
                         ContactAvatar(name = contact.name)
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
@@ -161,7 +152,6 @@ fun ContactsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
                             }
                         }
                     }
-                    HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
                 }
             }
         }
