@@ -79,7 +79,10 @@ class TurboInCallService : InCallService() {
         try {
             CallStateHolder.setCall(call)
 
-            val chosen = AppPrefs.randomBackground(this)
+            // TurboCallScreeningService already rolled one (for incoming calls) so the
+            // ringer-silence decision and the on-screen background agree; outgoing calls
+            // never hit screening, so fall back to rolling one here.
+            val chosen = CallStateHolder.takePendingBackground() ?: AppPrefs.randomBackground(this)
             CallStateHolder.setActiveBackground(chosen)
 
             call.registerCallback(callCallback)

@@ -43,8 +43,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             IQDialerTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    MainScreen(refreshKey = resumeTrigger)
+                UniversalBackground {
+                    Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
+                        MainScreen(refreshKey = resumeTrigger)
+                    }
                 }
             }
         }

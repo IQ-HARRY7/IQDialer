@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.*
 import androidx.core.content.ContextCompat
@@ -55,11 +56,13 @@ class SplashActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             IQDialerTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    SplashScreen(onReady = {
-                        startActivity(Intent(this, MainActivity::class.java))
-                        finish()
-                    })
+                UniversalBackground {
+                    Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
+                        SplashScreen(onReady = {
+                            startActivity(Intent(this, MainActivity::class.java))
+                            finish()
+                        })
+                    }
                 }
             }
         }

@@ -124,17 +124,19 @@ private fun loadContactPhotoBitmap(context: Context, number: String): Bitmap? {
     }
 }
 
-//  Contact & bitmap; 
+//  Contact & bitmap; pool pick wins when there is one, contact photo is only the fallback for an empty pool.
 private fun loadCallBackgroundBitmap(context: Context, number: String, chosen: BackgroundItem?): Bitmap? {
-    loadContactPhotoBitmap(context, number)?.let { return it }
-    if (chosen == null || chosen.isVideo) return null
-    return try {
-        context.contentResolver.openInputStream(chosen.uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream)
+    if (chosen != null && !chosen.isVideo) {
+        val poolBitmap = try {
+            context.contentResolver.openInputStream(chosen.uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream)
+            }
+        } catch (e: Exception) {
+            null
         }
-    } catch (e: Exception) {
-        null
+        if (poolBitmap != null) return poolBitmap
     }
+    return loadContactPhotoBitmap(context, number)
 }
 
 @Composable

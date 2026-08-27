@@ -24,6 +24,11 @@ object CallStateHolder {
     private val _activeBackground = MutableStateFlow<BackgroundItem?>(null)
     val activeBackground: StateFlow<BackgroundItem?> = _activeBackground
 
+    // set by TurboCallScreeningService (picked early so it can also decide whether to
+    // silence the ringer), consumed once by TurboInCallService so both agree on the
+    // same item instead of each rolling their own random pick.
+    private var pendingBackground: BackgroundItem? = null
+
     fun setCall(call: Call?) {
         _activeCall.value = call
         if (call == null) _activeBackground.value = null
@@ -35,6 +40,16 @@ object CallStateHolder {
 
     fun setActiveBackground(item: BackgroundItem?) {
         _activeBackground.value = item
+    }
+
+    fun setPendingBackground(item: BackgroundItem?) {
+        pendingBackground = item
+    }
+
+    fun takePendingBackground(): BackgroundItem? {
+        val item = pendingBackground
+        pendingBackground = null
+        return item
     }
 }
 

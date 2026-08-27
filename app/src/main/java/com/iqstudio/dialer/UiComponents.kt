@@ -5,12 +5,13 @@
 // *
 //**************************************************
 
-// shared UI bits: avatar, press feedback, video background player, liquid glass.
+// shared UI bits: avatar, press feedback, video background player, liquid glass, universal background.
 package com.iqstudio.dialer
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,7 +48,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -163,6 +166,32 @@ fun VideoBackgroundPlayer(
             translationY = offsetY
         )
     )
+}
+
+// The one background image behind every screen (Recents/Contacts/Settings/
+// Advanced/Blocklist/Splash -- everywhere except InCallActivity, which keeps
+// its own per-call photo/video background). Scrim alpha is a single tunable:
+// raise it if text legibility suffers against a busy photo, lower it if the
+// photo reads as too washed out. R.drawable.background_1 must exist on disk;
+// this file doesn't create it.
+private const val UniversalScrimAlpha = 0.62f
+
+@Composable
+fun UniversalBackground(content: @Composable () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Image(
+            painter = painterResource(R.drawable.background_1),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF101415).copy(alpha = UniversalScrimAlpha))
+        )
+        content()
+    }
 }
 
 // White, not blue -- kept the name GlassTint (used as the default tint
