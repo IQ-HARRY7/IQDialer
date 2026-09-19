@@ -12,17 +12,20 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Bundle
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.TelecomManager
+import android.telecom.VideoProfile
 import androidx.core.content.ContextCompat
 
 data class CallLogEntry(
     val number: String,
     val name: String?,
     val type: Int,
-    val date: Long
+    val date: Long,
+    val duration: Long = 0
 )
 
 fun hasCallLogPermission(context: Context): Boolean =
@@ -60,6 +63,40 @@ fun placeCall(context: Context, number: String) {
     telecomManager?.placeCall(Uri.fromParts("tel", number, null), null)
 }
 
+// Requests bidirectional video; whether it actually becomes a video call
+// depends on VoLTE-video support on both the device/carrier and the far
+// end. That negotiation happens at the platform/carrier level, not here --
+// unsupported just means the call proceeds as audio, which is the fallback.
+fun placeVideoCall(context: Context, number: String) {
+    val telecomManager = context.getSystemService(TelecomManager::class.java)
+    val extras = Bundle().apply {
+        putInt(TelecomManager.EXTRA_START_CALL_WITH_VIDEO_STATE, VideoProfile.STATE_BIDIRECTIONAL)
+    }
+    telecomManager?.placeCall(Uri.fromParts("tel", number, null), extras)
+}
+
+// Matches the "Incoming: 8m 5s" / "Outgoing: 31 sec" style call history
+// detail line. No fabricated ring counts for missed calls -- CallLog
+// doesn't expose how many times a phone actually rang, so a missed or
+// declined entry says what it is instead of making a number up.
+fun describeCallHistory(entry: CallLogEntry): String {
+    val durationText = if (entry.duration >= 60) {
+        val m = entry.duration / 60
+        val s = entry.duration % 60
+        if (s == 0L) "${m}m" else "${m}m ${s}s"
+    } else {
+        "${entry.duration} sec"
+    }
+    return when (entry.type) {
+        CallLog.Calls.INCOMING_TYPE -> "Incoming: $durationText"
+        CallLog.Calls.OUTGOING_TYPE -> "Outgoing: $durationText"
+        CallLog.Calls.MISSED_TYPE -> "Missed call"
+        CallLog.Calls.REJECTED_TYPE -> "Declined"
+        CallLog.Calls.BLOCKED_TYPE -> "Blocked"
+        else -> callTypeLabel(entry.type)
+    }
+}
+
 // Lookup is frustrating. 
 fun lookupContactName(context: Context, number: String): String? {
     if (!hasContactsPermission(context)) return null
@@ -85,4 +122,4 @@ fun lookupContactName(context: Context, number: String): String? {
     }
 }
 
-// wen give star? 
+// wen give star?

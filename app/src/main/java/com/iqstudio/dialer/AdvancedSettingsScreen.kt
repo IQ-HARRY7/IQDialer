@@ -15,9 +15,12 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -48,6 +51,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+// See RecentsScreen.kt for the same pattern -- NestedPane and
+// nestedPaneTransitionSpec (UiComponents.kt) are shared so every
+// nested-screen switch in the app reads as one consistent push/pop system.
+private sealed interface AdvancedPane : NestedPane {
+    object Main : AdvancedPane { override val paneDepth = 0 }
+    data class Editing(val item: BackgroundItem) : AdvancedPane { override val paneDepth = 1 }
+}
+
 @Composable
 fun AdvancedSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -55,129 +66,140 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
     var backgrounds by remember { mutableStateOf(AppPrefs.backgrounds(context)) }
     var editingItem by remember { mutableStateOf<BackgroundItem?>(null) }
 
-    val editing = editingItem
-    if (editing != null) {
-        BackgroundFitEditor(
-            item = editing,
-            onSave = { updated ->
-                AppPrefs.updateBackground(context, updated)
-                backgrounds = AppPrefs.backgrounds(context)
-                editingItem = null
-            },
-            onCancel = { editingItem = null }
-        )
-        return
-    }
+    val pane: AdvancedPane = editingItem?.let { AdvancedPane.Editing(it) } ?: AdvancedPane.Main
 
-    val pickMedia = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(20)
-    ) { uris ->
-        if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        scope.launch(Dispatchers.IO) {
-            uris.forEach { uri ->
-                try {
-                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } catch (e: Exception) {
-                    // i also don't know how it works, still in Debug 😶
-                }
-                val isVideo = context.contentResolver.getType(uri)?.startsWith("video/") == true
-                val hasSound = isVideo && probeHasAudio(context, uri)
-                AppPrefs.addBackground(context, BackgroundItem(uri = uri, isVideo = isVideo, hasSound = hasSound))
-            }
-            backgrounds = AppPrefs.backgrounds(context)
-        }
-    }
+    AnimatedContent(
+        targetState = pane,
+        transitionSpec = { nestedPaneTransitionSpec() },
+        label = "advancedPane"
+    ) { currentPane ->
+        when (currentPane) {
+            is AdvancedPane.Editing -> BackgroundFitEditor(
+                item = currentPane.item,
+                onSave = { updated ->
+                    AppPrefs.updateBackground(context, updated)
+                    backgrounds = AppPrefs.backgrounds(context)
+                    editingItem = null
+                },
+                onCancel = { editingItem = null }
+            )
+            AdvancedPane.Main -> {
+                BackHandler(onBack = onBack)
 
-    val ringtoneLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val uri: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            result.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            result.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-        }
-        AppPrefs.setRingtoneUri(context, uri)
-        try {
-            if (Settings.System.canWrite(context)) {
-                RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, uri)
-            }
-        } catch (e: Exception) {
-            // No WRITE_SETTINGS access -- the choice is still saved above - UX app would misbehave without this. -@IQ_HARRY_07
-        }
-    }
-
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            GlassIconButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Advanced settings", fontSize = 20.sp, color = TextPrimary)
-        }
-
-        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
-            GlassCard {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Call screen backgrounds", fontSize = 16.sp, color = TextPrimary)
-                    Text(
-                        "Shown on the incoming/active call screen when the caller has no saved contact photo. Add photos or videos -- one is picked at random for each call. A video with sound can replace the ringtone entirely unless you mute it below.",
-                        fontSize = 12.sp,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
-                    )
-
-                    backgrounds.forEach { item ->
-                        BackgroundRow(
-                            item = item,
-                            onToggleMute = { muted ->
-                                AppPrefs.updateBackground(context, item.copy(muted = muted))
-                                backgrounds = AppPrefs.backgrounds(context)
-                            },
-                            onEdit = { editingItem = item },
-                            onRemove = {
-                                AppPrefs.removeBackground(context, item.uri)
-                                backgrounds = AppPrefs.backgrounds(context)
+                val pickMedia = rememberLauncherForActivityResult(
+                    ActivityResultContracts.PickMultipleVisualMedia(20)
+                ) { uris ->
+                    if (uris.isEmpty()) return@rememberLauncherForActivityResult
+                    scope.launch(Dispatchers.IO) {
+                        uris.forEach { uri ->
+                            try {
+                                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            } catch (e: Exception) {
+                                // i also don't know how it works, still in Debug 😶
                             }
-                        )
-                        HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            val isVideo = context.contentResolver.getType(uri)?.startsWith("video/") == true
+                            val hasSound = isVideo && probeHasAudio(context, uri)
+                            AppPrefs.addBackground(context, BackgroundItem(uri = uri, isVideo = isVideo, hasSound = hasSound))
+                        }
+                        backgrounds = AppPrefs.backgrounds(context)
+                    }
+                }
+
+                val ringtoneLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    val uri: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        result.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        result.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+                    }
+                    AppPrefs.setRingtoneUri(context, uri)
+                    try {
+                        if (Settings.System.canWrite(context)) {
+                            RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, uri)
+                        }
+                    } catch (e: Exception) {
+                        // No WRITE_SETTINGS access -- the choice is still saved above - UX app would misbehave without this. -@IQ_HARRY_07
+                    }
+                }
+
+                Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        GlassIconButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Advanced settings", fontSize = 20.sp, color = TextPrimary)
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    GlassButton(onClick = {
-                        pickMedia.launch(
-                            PickVisualMediaRequest.Builder()
-                                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                                .build()
-                        )
-                    }) { Text(if (backgrounds.isEmpty()) "Add photos or videos" else "Add more", color = Color.White) }
-                }
-            }
+                    Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                        GlassCard {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text("Call screen backgrounds", fontSize = 16.sp, color = TextPrimary)
+                                Text(
+                                    "Shown on the incoming/active call screen when the caller has no saved contact photo. Add photos or videos -- one is picked at random for each call. A video with sound can replace the ringtone entirely unless you mute it below.",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                                )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                                Column(modifier = Modifier.animateContentSize()) {
+                                    backgrounds.forEach { item ->
+                                        BackgroundRow(
+                                            item = item,
+                                            onToggleMute = { muted ->
+                                                AppPrefs.updateBackground(context, item.copy(muted = muted))
+                                                backgrounds = AppPrefs.backgrounds(context)
+                                            },
+                                            onEdit = { editingItem = item },
+                                            onRemove = {
+                                                AppPrefs.removeBackground(context, item.uri)
+                                                backgrounds = AppPrefs.backgrounds(context)
+                                            }
+                                        )
+                                        HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                                    }
+                                }
 
-            GlassCard {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Ringtone", fontSize = 16.sp, color = TextPrimary)
-                    Text(
-                        "Applies system-wide when the device allows it; otherwise remembered by IQ Dialer only.",
-                        fontSize = 12.sp,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-                    )
-                    GlassOutlinedButton(onClick = {
-                        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, AppPrefs.ringtoneUri(context))
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                GlassButton(onClick = {
+                                    pickMedia.launch(
+                                        PickVisualMediaRequest.Builder()
+                                            .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                            .build()
+                                    )
+                                }) { Text(if (backgrounds.isEmpty()) "Add photos or videos" else "Add more", color = Color.White) }
+                            }
                         }
-                        ringtoneLauncher.launch(intent)
-                    }) { Text("Choose ringtone", color = Color.White) }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        GlassCard {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text("Ringtone", fontSize = 16.sp, color = TextPrimary)
+                                Text(
+                                    "Applies system-wide when the device allows it; otherwise remembered by IQ Dialer only.",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                                )
+                                GlassOutlinedButton(onClick = {
+                                    val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                                        putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
+                                        putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, AppPrefs.ringtoneUri(context))
+                                        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                    }
+                                    ringtoneLauncher.launch(intent)
+                                }) { Text("Choose ringtone", color = Color.White) }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
                 }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -247,6 +269,8 @@ private fun BackgroundFitEditor(
     var offsetX by remember { mutableFloatStateOf(item.offsetX) }
     var offsetY by remember { mutableFloatStateOf(item.offsetY) }
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    BackHandler(onBack = onCancel)
 
     LaunchedEffect(item.uri) {
         if (!item.isVideo) {

@@ -1,0 +1,23 @@
+<!--
+Copyright© IQ-STUDIO 2026 (ptv limited)
+IQDialer project uses GPL3 (or later). Dark starting-window theme, kills the white cold-start flash.
+-->
+<resources>
+    <style name="Theme.IQDialer" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF101415</item>
+    </style>
+
+    <!--
+    Explicit control via core-splashscreen instead of leaving Android 12+'s
+    SplashScreen layer to derive an appearance from windowBackground on its
+    own. That derivation is where HyperOS specifically has been unreliable,
+    showing white regardless of theme. postSplashScreenTheme is what the
+    library swaps to right after showing this, so the app's real theme takes
+    over the moment content is ready.
+    -->
+    <style name="Theme.IQDialer.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FF101415</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.IQDialer</item>
+    </style>
+</resources>

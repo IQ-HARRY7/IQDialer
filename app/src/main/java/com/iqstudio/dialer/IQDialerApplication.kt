@@ -56,6 +56,15 @@ class IQDialerApplication : Application() {
             manager?.createNotificationChannel(callChannel)
             manager?.createNotificationChannel(bubbleChannel)
         }
+
+        // Fire-and-forget warm-up so the JPEG is likely already decoded by
+        // the time the first screen composes UniversalBackground, instead
+        // of blocking that first composition on the decode. Plain Thread,
+        // not a coroutine scope -- this is a one-shot, app-lifetime task
+        // with nothing to cancel, GlobalScope would just be the same thing
+        // with an extra dependency on structured-concurrency machinery it
+        // doesn't need.
+        Thread { BackgroundImageCache.get(applicationContext) }.start()
     }
 }
 

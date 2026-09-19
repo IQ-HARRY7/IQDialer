@@ -12,17 +12,21 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
     <application
         android:name=".IQDialerApplication"
         android:label="IQ Dialer"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.IQDialer"
         android:allowBackup="true">
 
         <activity
             android:name=".SplashActivity"
+            android:theme="@style/Theme.IQDialer.Splash"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -32,6 +36,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:theme="@style/Theme.IQDialer.Splash"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.DIAL" />

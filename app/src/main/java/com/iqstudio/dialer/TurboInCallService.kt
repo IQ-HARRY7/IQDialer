@@ -9,11 +9,13 @@
 
 package com.iqstudio.dialer
 
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.PowerManager
+import android.provider.Settings
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.InCallService
@@ -123,9 +125,17 @@ class TurboInCallService : InCallService() {
             }
 
             if (state == Call.STATE_RINGING) {
+                // Locked/screen-off is the one case the full-screen intent
+                // actually matters for -- unlocked with another app in front,
+                // Android only ever uses it as a tap target anyway, and the
+                // bubble is already the "notice me" affordance, so a second
+                // loud banner on top of it is just noise.
+                val locked = (getSystemService(KEYGUARD_SERVICE) as? KeyguardManager)?.isKeyguardLocked == true
+                val bubbleWillShow = Settings.canDrawOverlays(this)
+                val quiet = !locked && bubbleWillShow
                 startForeground(
                     INCOMING_CALL_NOTIFICATION_ID,
-                    buildIncomingCallNotification(number),
+                    buildIncomingCallNotification(number, quiet),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
                 )
                 if (!InCallActivity.isVisible) {
@@ -153,33 +163,40 @@ class TurboInCallService : InCallService() {
         }
     }
 
-    private fun buildIncomingCallNotification(number: String): Notification {
-        val displayName = lookupContactName(this, number) ?: number
-        val fullScreenIntent = PendingIntent.getActivity(
-            this, 100,
-            Intent(this, InCallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        return NotificationCompat.Builder(this, INCOMING_CALL_CHANNEL_ID)
+    private fun buildIncomingCallNotification(number: String, quiet: Boolean): Notification {
+        val displayName = ContactCache.nameFor(this, number) ?: number
+        val builder = NotificationCompat.Builder(this, if (quiet) BUBBLE_CHANNEL_ID else INCOMING_CALL_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.sym_call_incoming)
             .setContentTitle(displayName)
             .setContentText("Incoming call")
-            .setFullScreenIntent(fullScreenIntent, true)
             .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
-            .build()
+
+        if (quiet) {
+            builder.setPriority(NotificationCompat.PRIORITY_LOW)
+        } else {
+            val fullScreenIntent = PendingIntent.getActivity(
+                this, 100,
+                Intent(this, InCallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.setFullScreenIntent(fullScreenIntent, true)
+            builder.setPriority(NotificationCompat.PRIORITY_HIGH)
+        }
+
+        return builder.build()
     }
 
     private fun buildOngoingCallNotification(number: String, state: Int): Notification {
-        val displayName = lookupContactName(this, number) ?: number
+        val displayName = ContactCache.nameFor(this, number) ?: number
         val contentIntent = PendingIntent.getActivity(
             this, 103,
             Intent(this, InCallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return NotificationCompat.Builder(this, INCOMING_CALL_CHANNEL_ID)
+        // Always the quiet channel here -- once dialing/connecting/active there's
+        // no "wake the phone" need, this is just a way back into the call.
+        return NotificationCompat.Builder(this, BUBBLE_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.sym_call_incoming)
             .setContentTitle(displayName)
             .setContentText(callStateLabel(state))

@@ -10,10 +10,16 @@
 
 package com.iqstudio.dialer
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
 import android.provider.CallLog
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -32,38 +39,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.*
-import androidx.core.content.ContextCompat
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-
-private fun loadCallLog(context: Context): List<CallLogEntry> {
-    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
-        return emptyList()
-    }
-    val entries = mutableListOf<CallLogEntry>()
-    context.contentResolver.query(
-        CallLog.Calls.CONTENT_URI,
-        arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME, CallLog.Calls.TYPE, CallLog.Calls.DATE),
-        null, null,
-        CallLog.Calls.DATE + " DESC"
-    )?.use { cursor ->
-        val numberIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
-        val nameIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
-        val typeIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
-        val dateIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
-        while (cursor.moveToNext()) {
-            entries.add(
-                CallLogEntry(
-                    number = cursor.getString(numberIdx) ?: "",
-                    name = cursor.getString(nameIdx),
-                    type = cursor.getInt(typeIdx),
-                    date = cursor.getLong(dateIdx)
-                )
-            )
-        }
-    }
-    return entries
-}
 
 private data class GroupedEntry(
     val number: String,
@@ -101,11 +76,26 @@ private fun callDirectionColor(type: Int): Color = when (type) {
     else -> TextSecondary
 }
 
+// Which "screen" this composable is currently showing. Kept separate from
+// the actual state (showSettings/selectedNumber, unchanged below) purely so
+// AnimatedContent has a single value to diff -- doesn't change what
+// triggers navigation, only how the transition between panes is rendered.
+// NestedPane/nestedPaneTransitionSpec (UiComponents.kt) are shared by every
+// nested-screen switch in the app so they all read as one consistent
+// push/pop system instead of a per-screen one-off.
+private sealed interface RecentsPane : NestedPane {
+    object List : RecentsPane { override val paneDepth = 0 }
+    object Settings : RecentsPane { override val paneDepth = 1 }
+    data class Contact(val number: String) : RecentsPane { override val paneDepth = 1 }
+}
+
 @Composable
-fun RecentsScreen(refreshKey: Int, onNestedScreenChange: (Boolean) -> Unit = {}) {
+fun RecentsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
-    var rawEntries by remember { mutableStateOf<List<CallLogEntry>>(emptyList()) }
-    var loaded by remember { mutableStateOf(false) }
+    val rawEntriesOrNull by DataCache.callLog.collectAsState()
+    LaunchedEffect(Unit) { DataCache.ensureLoaded(context) }
+    val rawEntries = rawEntriesOrNull ?: emptyList()
+    val loaded = rawEntriesOrNull != null
     var query by remember { mutableStateOf("") }
     var selectedNumber by remember { mutableStateOf<String?>(null) }
     var showDialpad by remember { mutableStateOf(false) }
@@ -114,21 +104,6 @@ fun RecentsScreen(refreshKey: Int, onNestedScreenChange: (Boolean) -> Unit = {})
     val nested = showSettings || selectedNumber != null
     LaunchedEffect(nested) { onNestedScreenChange(nested) }
     DisposableEffect(Unit) { onDispose { onNestedScreenChange(false) } }
-
-    LaunchedEffect(refreshKey) {
-        rawEntries = withContext(Dispatchers.IO) { loadCallLog(context) }
-        loaded = true
-    }
-
-    if (showSettings) {
-        SettingsScreen(onBack = { showSettings = false })
-        return
-    }
-
-    selectedNumber?.let { number ->
-        ContactDetailScreen(phoneNumber = number, onBack = { selectedNumber = null })
-        return
-    }
 
     val grouped = remember(rawEntries) { groupConsecutive(rawEntries) }
     val filtered = remember(grouped, query) {
@@ -140,107 +115,147 @@ fun RecentsScreen(refreshKey: Int, onNestedScreenChange: (Boolean) -> Unit = {})
     }
     val formatter = java.text.SimpleDateFormat("MMM d, " + AppPrefs.timePattern(context), java.util.Locale.getDefault())
 
-    Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Recents", fontSize = 26.sp)
-                GlassIconButton(
-                    icon = Icons.Filled.Settings,
-                    contentDescription = "Settings",
-                    onClick = { showSettings = true }
-                )
-            }
+    val pane: RecentsPane = when {
+        showSettings -> RecentsPane.Settings
+        selectedNumber != null -> RecentsPane.Contact(selectedNumber!!)
+        else -> RecentsPane.List
+    }
 
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search recents") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-            )
+    AnimatedContent(
+        targetState = pane,
+        transitionSpec = { nestedPaneTransitionSpec() },
+        label = "recentsPane"
+    ) { currentPane ->
+        when (currentPane) {
+            RecentsPane.Settings -> SettingsScreen(onBack = { showSettings = false })
+            is RecentsPane.Contact -> ContactDetailScreen(phoneNumber = currentPane.number, onBack = { selectedNumber = null })
+            RecentsPane.List -> Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Recents", fontSize = 26.sp)
+                        GlassIconButton(
+                            icon = Icons.Filled.Settings,
+                            contentDescription = "Settings",
+                            onClick = { showSettings = true }
+                        )
+                    }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (!loaded) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-            } else if (filtered.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    Text(
-                        if (rawEntries.isEmpty()) "No call history yet" else "No matches",
-                        color = TextSecondary,
-                        modifier = Modifier.align(Alignment.Center)
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("Search recents") },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                     )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 88.dp)
-                ) {
-                    items(filtered) { entry ->
-                        val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
-                        GlassRow(onClick = { selectedNumber = entry.number }) {
-                            ContactAvatar(name = entry.name)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val listState = when {
+                        !loaded -> "loading"
+                        filtered.isEmpty() -> "empty"
+                        else -> "list"
+                    }
+                    Crossfade(targetState = listState, label = "recentsListState") { state ->
+                        when (state) {
+                            "loading" -> Box(modifier = Modifier.fillMaxSize()) {
+                                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                            }
+                            "empty" -> Box(modifier = Modifier.fillMaxSize()) {
                                 Text(
-                                    entry.name ?: entry.number,
-                                    fontSize = 16.sp,
-                                    color = if (missed) CallRed else TextPrimary
+                                    if (rawEntries.isEmpty()) "No call history yet" else "No matches",
+                                    color = TextSecondary,
+                                    modifier = Modifier.align(Alignment.Center)
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        callDirectionGlyph(entry.type),
-                                        fontSize = 12.sp,
-                                        color = callDirectionColor(entry.type)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        callTypeLabel(entry.type) +
-                                            (if (entry.count > 1) " (" + entry.count + ")" else ""),
-                                        fontSize = 13.sp,
-                                        color = TextSecondary
-                                    )
+                            }
+                            else -> LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = 88.dp)
+                            ) {
+                                items(filtered, key = { "${it.number}_${it.date}" }) { entry ->
+                                    val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
+                                    GlassRow(
+                                        onClick = { selectedNumber = entry.number },
+                                        modifier = Modifier.animateItem()
+                                    ) {
+                                        ContactAvatar(name = entry.name)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                entry.name ?: entry.number,
+                                                fontSize = 16.sp,
+                                                color = if (missed) CallRed else TextPrimary
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    callDirectionGlyph(entry.type),
+                                                    fontSize = 12.sp,
+                                                    color = callDirectionColor(entry.type)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    callTypeLabel(entry.type) +
+                                                        (if (entry.count > 1) " (" + entry.count + ")" else ""),
+                                                    fontSize = 13.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            formatter.format(java.util.Date(entry.date)),
+                                            fontSize = 11.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
                                 }
                             }
-                            Text(
-                                formatter.format(java.util.Date(entry.date)),
-                                fontSize = 11.sp,
-                                color = TextSecondary
-                            )
                         }
                     }
                 }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(20.dp)
+                        .size(56.dp)
+                        .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
+                        .pressScale(onClick = { showDialpad = !showDialpad }),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Crossfade(targetState = showDialpad, label = "fabIcon") { open ->
+                        Icon(
+                            if (open) Icons.Filled.Close else Icons.Filled.Call,
+                            contentDescription = if (open) "Close dialpad" else "Dialpad",
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = showDialpad,
+                    enter = slideInVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+                        initialOffsetY = { it }
+                    ) + fadeIn(),
+                    exit = slideOutVertically(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                        targetOffsetY = { it }
+                    ) + fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                ) {
+                    EmbeddedDialpad(
+                        onCall = { number ->
+                            placeCall(context, number)
+                            showDialpad = false
+                        }
+                    )
+                }
             }
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp)
-                .size(56.dp)
-                .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
-                .pressScale(onClick = { showDialpad = !showDialpad }),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Filled.Call, contentDescription = "Dialpad", tint = Color.White)
-        }
-
-        if (showDialpad) {
-            EmbeddedDialpad(
-                onCall = { number ->
-                    placeCall(context, number)
-                    showDialpad = false
-                },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
         }
     }
 }
@@ -262,50 +277,66 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, modifier: Modifier = Modif
         modifier = modifier
             .fillMaxWidth()
             .background(SurfaceCard, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .padding(16.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Text(
             number.ifEmpty { " " },
-            fontSize = 24.sp,
+            fontSize = 20.sp,
             color = TextPrimary,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
         )
         DIAL_ROWS.forEach { row ->
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 row.forEach { key ->
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
-                            .size(70.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .size(52.dp)
+                            .clip(CircleShape)
                             .background(SurfaceCardHigh)
                             .pressScale { number += key.digit },
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text(key.digit, fontSize = 22.sp, color = TextPrimary)
+                        Text(key.digit, fontSize = 19.sp, color = TextPrimary)
                         if (key.sub.isNotEmpty()) {
-                            Text(key.sub, fontSize = 10.sp, color = TextSecondary)
+                            Text(key.sub, fontSize = 9.sp, color = TextSecondary)
                         }
                     }
                 }
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            horizontalArrangement = Arrangement.End
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (number.isNotEmpty()) SurfaceCardHigh else Color.Transparent)
+                    .then(
+                        if (number.isNotEmpty()) Modifier.pressScale { number = number.dropLast(1) } else Modifier
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (number.isNotEmpty()) {
+                    Text("\u232B", fontSize = 17.sp, color = TextSecondary)
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
                     .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
                     .pressScale(onClick = { if (number.isNotEmpty()) onCall(number) }),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Call, contentDescription = "Call", tint = Color.White)
+                Icon(Icons.Filled.Call, contentDescription = "Call", tint = Color.White, modifier = Modifier.size(20.dp))
             }
         }
     }
 }
+

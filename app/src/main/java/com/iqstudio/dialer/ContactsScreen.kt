@@ -9,8 +9,8 @@
 
 package com.iqstudio.dialer
 
-import android.content.Context
-import android.provider.ContactsContract
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,50 +27,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 data class ContactEntry(val id: Long, val name: String, val number: String?)
 
-private fun loadContacts(context: Context): List<ContactEntry> {
-    if (!hasContactsPermission(context)) return emptyList()
-    val entries = mutableListOf<ContactEntry>()
-    val projection = arrayOf(
-        ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
-        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-        ContactsContract.CommonDataKinds.Phone.NUMBER
-    )
-    context.contentResolver.query(
-        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-        projection,
-        null, null,
-        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
-    )?.use { cursor ->
-        val idIdx = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
-        val nameIdx = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-        val numberIdx = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
-        val seenIds = HashSet<Long>()
-        while (cursor.moveToNext()) {
-            val id = cursor.getLong(idIdx)
-            if (seenIds.add(id)) {
-                entries.add(
-                    ContactEntry(
-                        id = id,
-                        name = cursor.getString(nameIdx) ?: "Unknown",
-                        number = cursor.getString(numberIdx)
-                    )
-                )
-            }
-        }
-    }
-    return entries
+// See RecentsScreen.kt for the same pattern with more panes -- NestedPane
+// and nestedPaneTransitionSpec (UiComponents.kt) are shared so every
+// nested-screen switch in the app reads as one consistent push/pop system.
+private sealed interface ContactsPane : NestedPane {
+    object List : ContactsPane { override val paneDepth = 0 }
+    object Settings : ContactsPane { override val paneDepth = 1 }
+    data class Contact(val number: String) : ContactsPane { override val paneDepth = 1 }
 }
 
 @Composable
 fun ContactsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
-    var contacts by remember { mutableStateOf<List<ContactEntry>>(emptyList()) }
-    var loaded by remember { mutableStateOf(false) }
+    val contactsOrNull by DataCache.contacts.collectAsState()
+    LaunchedEffect(Unit) { DataCache.ensureLoaded(context) }
+    val contacts = contactsOrNull ?: emptyList()
+    val loaded = contactsOrNull != null
     var query by remember { mutableStateOf("") }
     var selectedNumber by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
@@ -78,21 +53,6 @@ fun ContactsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
     val nested = showSettings || selectedNumber != null
     LaunchedEffect(nested) { onNestedScreenChange(nested) }
     DisposableEffect(Unit) { onDispose { onNestedScreenChange(false) } }
-
-    LaunchedEffect(Unit) {
-        contacts = withContext(Dispatchers.IO) { loadContacts(context) }
-        loaded = true
-    }
-
-    if (showSettings) {
-        SettingsScreen(onBack = { showSettings = false })
-        return
-    }
-
-    selectedNumber?.let { number ->
-        ContactDetailScreen(phoneNumber = number, onBack = { selectedNumber = null })
-        return
-    }
 
     val filtered = remember(contacts, query) {
         if (query.isBlank()) contacts
@@ -102,53 +62,77 @@ fun ContactsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Contacts", fontSize = 26.sp)
-            GlassIconButton(
-                icon = Icons.Filled.Settings,
-                contentDescription = "Settings",
-                onClick = { showSettings = true }
-            )
-        }
+    val pane: ContactsPane = when {
+        showSettings -> ContactsPane.Settings
+        selectedNumber != null -> ContactsPane.Contact(selectedNumber!!)
+        else -> ContactsPane.List
+    }
 
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Search contacts") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-        )
+    AnimatedContent(
+        targetState = pane,
+        transitionSpec = { nestedPaneTransitionSpec() },
+        label = "contactsPane"
+    ) { currentPane ->
+        when (currentPane) {
+            ContactsPane.Settings -> SettingsScreen(onBack = { showSettings = false })
+            is ContactsPane.Contact -> ContactDetailScreen(phoneNumber = currentPane.number, onBack = { selectedNumber = null })
+            ContactsPane.List -> Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Contacts", fontSize = 26.sp)
+                    GlassIconButton(
+                        icon = Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        onClick = { showSettings = true }
+                    )
+                }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (!loaded) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            }
-        } else if (filtered.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Text(
-                    if (contacts.isEmpty()) "No contacts found" else "No matches",
-                    color = TextSecondary,
-                    modifier = Modifier.align(Alignment.Center)
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Search contacts") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                 )
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filtered) { contact ->
-                    GlassRow(onClick = { if (contact.number != null) selectedNumber = contact.number }) {
-                        ContactAvatar(name = contact.name)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(contact.name, fontSize = 16.sp, color = TextPrimary)
-                            if (contact.number != null) {
-                                Text(contact.number, fontSize = 13.sp, color = TextSecondary)
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val listState = when {
+                    !loaded -> "loading"
+                    filtered.isEmpty() -> "empty"
+                    else -> "list"
+                }
+                Crossfade(targetState = listState, label = "contactsListState") { state ->
+                    when (state) {
+                        "loading" -> Box(modifier = Modifier.fillMaxSize()) {
+                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                        }
+                        "empty" -> Box(modifier = Modifier.fillMaxSize()) {
+                            Text(
+                                if (contacts.isEmpty()) "No contacts found" else "No matches",
+                                color = TextSecondary,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
+                        else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(filtered, key = { it.id }) { contact ->
+                                GlassRow(
+                                    onClick = { if (contact.number != null) selectedNumber = contact.number },
+                                    modifier = Modifier.animateItem()
+                                ) {
+                                    ContactAvatar(name = contact.name)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(contact.name, fontSize = 16.sp, color = TextPrimary)
+                                        if (contact.number != null) {
+                                            Text(contact.number, fontSize = 13.sp, color = TextSecondary)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -157,3 +141,4 @@ fun ContactsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
         }
     }
 }
+

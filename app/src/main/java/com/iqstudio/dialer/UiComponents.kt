@@ -8,6 +8,8 @@
 // shared UI bits: avatar, press feedback, video background player, liquid glass, universal background.
 package com.iqstudio.dialer
 
+import android.content.Context
+import android.graphics.BitmapFactory
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -45,12 +47,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -176,11 +179,35 @@ fun VideoBackgroundPlayer(
 // this file doesn't create it.
 private const val UniversalScrimAlpha = 0.62f
 
+// Decoded once per process, not once per Activity. painterResource() on its
+// own re-decodes the JPEG fresh every time a screen composes it -- Splash
+// and Main both do, every cold start -- which is real, measurable work for
+// a raster image this size. IQDialerApplication kicks off the first decode
+// on a background thread at process start, so this is usually already
+// populated by the time any screen actually needs it; the synchronized
+// block just makes the cold-path (nothing warmed it yet) safe too.
+object BackgroundImageCache {
+    @Volatile private var bitmap: ImageBitmap? = null
+    private val lock = Any()
+
+    fun get(context: Context): ImageBitmap {
+        bitmap?.let { return it }
+        synchronized(lock) {
+            bitmap?.let { return it }
+            val decoded = BitmapFactory.decodeResource(context.resources, R.drawable.background_1).asImageBitmap()
+            bitmap = decoded
+            return decoded
+        }
+    }
+}
+
 @Composable
 fun UniversalBackground(content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    val bitmap = remember { BackgroundImageCache.get(context) }
     Box(modifier = Modifier.fillMaxSize()) {
         Image(
-            painter = painterResource(R.drawable.background_1),
+            bitmap = bitmap,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -359,3 +386,4 @@ fun GlassRow(
         content = content
     )
 }
+

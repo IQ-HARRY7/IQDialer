@@ -13,10 +13,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -32,34 +37,28 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 class MainActivity : ComponentActivity() {
-   // resume/continue/ different than java 🫩 - debugging.
-    private var resumeTrigger by mutableStateOf(0)
-
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContent {
             IQDialerTheme {
                 UniversalBackground {
                     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
-                        MainScreen(refreshKey = resumeTrigger)
+                        MainScreen()
                     }
                 }
             }
         }
     }
-
-    override fun onResume() {
-        super.onResume()
-        resumeTrigger++
-    }
 }
 
 @Composable
-fun MainScreen(refreshKey: Int) {
+fun MainScreen() {
     var selectedTab by remember { mutableStateOf(0) }
     var isNested by remember { mutableStateOf(false) }
 
@@ -68,13 +67,31 @@ fun MainScreen(refreshKey: Int) {
             AnimatedContent(
                 targetState = selectedTab,
                 transitionSpec = {
-                    fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                        .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                    val forward = targetState > initialState
+                    // StiffnessMediumLow (400f) is what actually read as a
+                    // buffer switching tabs -- the data underneath was
+                    // never the problem, composition is preserved across
+                    // switches so nothing was re-querying. Just a spring
+                    // that took too long to settle. StiffnessMedium (1500f)
+                    // keeps the same directional slide, snaps into place
+                    // properly fast.
+                    val spec = spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+                    // Deliberately a subtler partial-width shift than the
+                    // full push/pop slide nested screens use -- a tab
+                    // switch is a lateral move between siblings, not
+                    // navigating deeper, so it reads as lighter motion.
+                    if (forward) {
+                        (slideInHorizontally(spec) { it / 4 } + fadeIn())
+                            .togetherWith(slideOutHorizontally(spec) { -it / 4 } + fadeOut())
+                    } else {
+                        (slideInHorizontally(spec) { -it / 4 } + fadeIn())
+                            .togetherWith(slideOutHorizontally(spec) { it / 4 } + fadeOut())
+                    }
                 },
                 label = "tabSwitch"
             ) { tab ->
                 if (tab == 0) {
-                    RecentsScreen(refreshKey, onNestedScreenChange = { isNested = it })
+                    RecentsScreen(onNestedScreenChange = { isNested = it })
                 } else {
                     ContactsScreen(onNestedScreenChange = { isNested = it })
                 }
@@ -117,15 +134,20 @@ private fun RowScope.FloatingNavItem(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val bgAlpha by animateFloatAsState(targetValue = if (selected) 0.85f else 0f, label = "navPillBg")
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) DarkGlassContent else Color.White.copy(alpha = 0.85f),
+        label = "navPillContent"
+    )
+
     Row(
         modifier = Modifier
             .weight(1f)
             .padding(6.dp)
             .clip(RoundedCornerShape(24.dp))
-            .then(
-                if (selected) Modifier.background(Color.White.copy(alpha = 0.85f)) else Modifier
-            )
+            .background(Color.White.copy(alpha = bgAlpha))
             .pressScale(onClick = onClick)
+            .animateContentSize()
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
@@ -133,12 +155,14 @@ private fun RowScope.FloatingNavItem(
         Icon(
             icon,
             contentDescription = label,
-            tint = if (selected) DarkGlassContent else Color.White.copy(alpha = 0.85f),
+            tint = contentColor,
             modifier = Modifier.size(22.dp)
         )
         if (selected) {
             Spacer(Modifier.width(6.dp))
-            Text(label, color = DarkGlassContent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
+
+

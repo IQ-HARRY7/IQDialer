@@ -12,6 +12,8 @@ package com.iqstudio.dialer
 import android.content.ContentUris
 import android.content.Context
 import android.provider.BlockedNumberContract
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -60,6 +62,8 @@ fun BlocklistScreen(onBack: () -> Unit) {
     var loaded by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
 
+    BackHandler(onBack = onBack)
+
     LaunchedEffect(reloadKey) {
         entries = withContext(Dispatchers.IO) { loadBlockedNumbers(context) }
         loaded = true
@@ -75,36 +79,43 @@ fun BlocklistScreen(onBack: () -> Unit) {
             Text("Blocked numbers", fontSize = 20.sp, color = TextPrimary)
         }
 
-        HorizontalDivider()
-
-        if (!loaded) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            }
-        } else if (entries.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Text("No blocked numbers", color = TextSecondary, modifier = Modifier.align(Alignment.Center))
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(entries) { entry ->
-                    ListItem(
-                        headlineContent = { Text(entry.number, color = TextPrimary) },
-                        trailingContent = {
-                            GlassIconButton(
-                                icon = Icons.Filled.Delete,
-                                contentDescription = "Unblock",
-                                tint = CallRed,
-                                onClick = {
-                                    unblockNumber(context, entry.id)
-                                    reloadKey++
-                                }
-                            )
+        val listState = when {
+            !loaded -> "loading"
+            entries.isEmpty() -> "empty"
+            else -> "list"
+        }
+        Crossfade(targetState = listState, label = "blocklistState") { state ->
+            when (state) {
+                "loading" -> Box(modifier = Modifier.fillMaxSize()) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                }
+                "empty" -> Box(modifier = Modifier.fillMaxSize()) {
+                    Text("No blocked numbers", color = TextSecondary, modifier = Modifier.align(Alignment.Center))
+                }
+                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(entries, key = { it.id }) { entry ->
+                        GlassCard(modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp).animateItem()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(entry.number, color = TextPrimary)
+                                GlassIconButton(
+                                    icon = Icons.Filled.Delete,
+                                    contentDescription = "Unblock",
+                                    tint = CallRed,
+                                    onClick = {
+                                        unblockNumber(context, entry.id)
+                                        reloadKey++
+                                    }
+                                )
+                            }
                         }
-                    )
-                    HorizontalDivider()
+                    }
                 }
             }
         }
     }
 }
+

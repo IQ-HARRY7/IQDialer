@@ -12,13 +12,19 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.VideoProfile
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
@@ -27,15 +33,17 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call as CallIconVector
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -139,6 +147,13 @@ private fun loadCallBackgroundBitmap(context: Context, number: String, chosen: B
     return loadContactPhotoBitmap(context, number)
 }
 
+private fun formatCallDuration(totalSeconds: Int): String {
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
+}
+
 @Composable
 fun InCallScreen() {
     val context = LocalContext.current
@@ -152,6 +167,8 @@ fun InCallScreen() {
     val recordingScope = rememberCoroutineScope()
 
     val number = call?.details?.handle?.schemeSpecificPart ?: "Unknown"
+    var videoState by remember { mutableIntStateOf(call?.details?.videoState ?: VideoProfile.STATE_AUDIO_ONLY) }
+    val isVideoCall = VideoProfile.isVideo(videoState)
 
     DisposableEffect(call) {
         val current = call
@@ -159,15 +176,41 @@ fun InCallScreen() {
             override fun onStateChanged(c: Call, state: Int) {
                 callState = state
             }
+            override fun onDetailsChanged(c: Call, details: Call.Details) {
+                videoState = details.videoState
+            }
         }
         current?.registerCallback(callback)
         callState = current?.state ?: Call.STATE_DISCONNECTED
+        videoState = current?.details?.videoState ?: VideoProfile.STATE_AUDIO_ONLY
         onDispose { current?.unregisterCallback(callback) }
     }
 
     // Call effect & processing. 
     LaunchedEffect(number) {
-        contactName = withContext(Dispatchers.IO) { lookupContactName(context, number) }
+        contactName = withContext(Dispatchers.IO) { ContactCache.nameFor(context, number) }
+    }
+
+    // Set once, the first time the call goes active, and left alone through
+    // any later hold/unhold -- elapsedRealtime so a wall-clock/NTP jump
+    // mid-call can't skew the timer.
+    var connectedAtElapsed by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(callState) {
+        if (callState == Call.STATE_ACTIVE && connectedAtElapsed == null) {
+            connectedAtElapsed = SystemClock.elapsedRealtime()
+        }
+        if (callState == Call.STATE_DISCONNECTED) {
+            connectedAtElapsed = null
+        }
+    }
+
+    var elapsedSeconds by remember { mutableIntStateOf(0) }
+    LaunchedEffect(connectedAtElapsed) {
+        val startedAt = connectedAtElapsed ?: return@LaunchedEffect
+        while (true) {
+            elapsedSeconds = ((SystemClock.elapsedRealtime() - startedAt) / 1000).toInt()
+            delay(1000)
+        }
     }
 
     LaunchedEffect(number, activeBackground) {
@@ -259,9 +302,28 @@ fun InCallScreen() {
                     textAlign = TextAlign.Center,
                     style = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.8f), blurRadius = 16f))
                 )
+                AnimatedVisibility(
+                    visible = isVideoCall,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .liquidGlass(shape = RoundedCornerShape(50), tint = CallBlue, tintAlpha = 0.45f)
+                                .padding(horizontal = 10.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.Videocam, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Video call", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    callStateLabel(callState),
+                    if (callState == Call.STATE_ACTIVE) formatCallDuration(elapsedSeconds) else callStateLabel(callState),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White.copy(alpha = 0.85f)
@@ -280,8 +342,7 @@ fun InCallScreen() {
                     Box(
                         modifier = Modifier
                             .size(76.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.15f))
+                            .liquidGlass(shape = CircleShape)
                             .blur(if (hasVisualBackground) 8.dp else 0.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -311,7 +372,13 @@ fun InCallScreen() {
                             icon = Icons.Filled.CallIconVector,
                             label = "ACCEPT",
                             color = CallGreen,
-                            onClick = { call?.answer(VideoProfile.STATE_AUDIO_ONLY) }
+                            onClick = {
+                                // Forcing STATE_AUDIO_ONLY here would decline the video half of
+                                // an incoming video call even when the caller offered it -- answer
+                                // with whatever was actually requested instead.
+                                val requestedState = call?.details?.videoState ?: VideoProfile.STATE_AUDIO_ONLY
+                                call?.answer(requestedState)
+                            }
                         )
                     }
                 } else {
@@ -337,6 +404,13 @@ fun InCallScreen() {
                                 icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
                                 active = isMuted,
                                 onClick = { TurboInCallService.instance?.setMuted(!isMuted) }
+                            )
+                            SmallToggleButton(
+                                icon = Icons.Filled.Pause,
+                                active = callState == Call.STATE_HOLDING,
+                                onClick = {
+                                    if (callState == Call.STATE_HOLDING) call?.unhold() else call?.hold()
+                                }
                             )
                             RecordToggleButton(
                                 active = isRecording,
@@ -372,9 +446,8 @@ private fun CallActionButton(
         Box(
             modifier = Modifier
                 .size(64.dp)
-                .clip(CircleShape)
-                .background(color)
-                .clickable(onClick = onClick),
+                .liquidGlass(shape = CircleShape, tint = color, tintAlpha = 0.75f)
+                .pressScale(onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
             Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(28.dp))
@@ -393,9 +466,8 @@ private fun SmallToggleButton(
     Box(
         modifier = Modifier
             .size(52.dp)
-            .clip(CircleShape)
-            .background(if (active) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.15f))
-            .clickable(onClick = onClick),
+            .liquidGlass(shape = CircleShape, tintAlpha = if (active) 0.85f else 0.18f)
+            .pressScale(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -409,15 +481,14 @@ private fun SmallToggleButton(
 
 // Plain dot rather than an icon on purpose -- keeps this independent of any
 // specific icon existing in whatever material-icons-core version is on the
-// classpath. Red ring + white center while recording, the reverse otherwise.
+// classpath. Red glass + white center while recording, the reverse otherwise.
 @Composable
 private fun RecordToggleButton(active: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(52.dp)
-            .clip(CircleShape)
-            .background(if (active) CallRed else Color.White.copy(alpha = 0.15f))
-            .clickable(onClick = onClick),
+            .liquidGlass(shape = CircleShape, tint = if (active) CallRed else GlassTint, tintAlpha = if (active) 0.75f else 0.18f)
+            .pressScale(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Box(
@@ -428,3 +499,4 @@ private fun RecordToggleButton(active: Boolean, onClick: () -> Unit) {
         )
     }
 }
+

@@ -32,6 +32,9 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import kotlin.math.abs
 
 const val BUBBLE_CHANNEL_ID = "call_bubble"
@@ -52,6 +55,7 @@ class CallBubbleService : Service() {
     private var rightButton: View? = null
     private var registeredCall: Call? = null
     private var speakerSwitchPending = false
+    private var ringtonePlayer: ExoPlayer? = null
 
     private val callCallback = object : Call.Callback() {
         override fun onStateChanged(call: Call, state: Int) {
@@ -122,7 +126,7 @@ class CallBubbleService : Service() {
         try {
             val call = CallStateHolder.activeCall.value
             val number = call?.details?.handle?.schemeSpecificPart ?: "Call"
-            val displayName = lookupContactName(this, number) ?: number
+            val displayName = ContactCache.nameFor(this, number) ?: number
 
             registeredCall = call
             call?.registerCallback(callCallback)
@@ -216,6 +220,43 @@ class CallBubbleService : Service() {
     
     private fun applyState(state: Int) {
         rightButton?.visibility = if (state == Call.STATE_RINGING) View.VISIBLE else View.GONE
+        if (state == Call.STATE_RINGING) {
+            startRingtoneAudio()
+        } else {
+            stopRingtoneAudio()
+        }
+    }
+
+    // The bubble has no video surface, so this is audio-only -- same idea as
+    // InCallActivity's VideoBackgroundPlayer (unmuted sound video replaces
+    // the ringtone), just here for whenever the user's in another app and
+    // only the bubble is up. TurboCallScreeningService already silenced the
+    // system ringtone for exactly this pick; this is what plays instead of
+    // dead silence. Idempotent -- safe to call repeatedly while ringing.
+    private fun startRingtoneAudio() {
+        if (ringtonePlayer != null) return
+        val item = CallStateHolder.activeBackground.value ?: return
+        if (!item.isVideo || !item.hasSound || item.muted) return
+        try {
+            ringtonePlayer = ExoPlayer.Builder(this).build().apply {
+                setMediaItem(MediaItem.fromUri(item.uri))
+                repeatMode = Player.REPEAT_MODE_ONE
+                volume = 1f
+                prepare()
+                playWhenReady = true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "startRingtoneAudio failed", e)
+            ringtonePlayer = null
+        }
+    }
+
+    private fun stopRingtoneAudio() {
+        try {
+            ringtonePlayer?.release()
+        } catch (e: Exception) {
+        }
+        ringtonePlayer = null
     }
 
     private fun setupDrag(view: View, layoutParams: WindowManager.LayoutParams) {
@@ -299,6 +340,7 @@ class CallBubbleService : Service() {
 
     override fun onDestroy() {
         registeredCall?.unregisterCallback(callCallback)
+        stopRingtoneAudio()
         bubbleView?.let {
             try {
                 windowManager.removeView(it)

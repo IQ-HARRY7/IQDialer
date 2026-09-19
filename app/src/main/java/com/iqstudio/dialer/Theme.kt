@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 // Colour 
 val CallGreen = Color(0xFF4ADE80)
 val CallRed = Color(0xFFEF4444)
+val CallBlue = Color(0xFF4D8EFF)
 
 val SurfaceCard = Color(0xFF1D2022)
 val SurfaceCardHigh = Color(0xFF272A2C)
@@ -45,4 +46,4 @@ fun IQDialerTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = IQDialerColors, content = content)
 }
 
-// will be added new things here. soon. 
+// will be added new things here. soon.
