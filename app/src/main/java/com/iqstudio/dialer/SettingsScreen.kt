@@ -100,7 +100,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                                 modifier = Modifier.clickable { showAdvanced = true },
                                 headlineContent = { Text("Advanced settings", color = TextPrimary) },
-                                supportingContent = { Text("Call screen background and more", color = TextSecondary) }
+                                supportingContent = { Text("Dial pad, calls, backgrounds and more", color = TextSecondary) }
                             )
                         }
 

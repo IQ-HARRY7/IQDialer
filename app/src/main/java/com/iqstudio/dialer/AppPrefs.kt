@@ -15,6 +15,12 @@ private const val PREFS_NAME = "iq_dialer_prefs"
 private const val KEY_24_HOUR = "use_24_hour"
 private const val KEY_BACKGROUNDS = "call_backgrounds"
 private const val KEY_RINGTONE_URI = "manual_ringtone_uri"
+private const val KEY_DIALPAD_SOUND = "dialpad_sound"
+private const val KEY_REDIAL_AUTO = "redial_automatically"
+private const val KEY_MISSED_CALL_REMINDER = "missed_call_reminder"
+private const val KEY_VIBRATE_ON_ANSWER = "vibrate_on_answer"
+private const val KEY_CALL_WAITING_NOTIFICATION = "call_waiting_notification"
+private const val KEY_QUICK_RESPONSES = "quick_responses_enabled"
 
 // NoEscape logic. 
 private const val FIELD_SEP = "\u001F"
@@ -99,6 +105,54 @@ object AppPrefs {
 
     fun setRingtoneUri(context: Context, uri: Uri?) {
         prefs(context).edit().putString(KEY_RINGTONE_URI, uri?.toString()).apply()
+    }
+
+    // Dialpad key-press tone -- on by default, toggle lives in Settings.
+    fun dialpadSoundEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DIALPAD_SOUND, true)
+
+    fun setDialpadSound(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DIALPAD_SOUND, value).apply()
+    }
+
+    // Advanced settings additions below -- basic scaffolding per James's
+    // request. These store the choice; none of them are wired to real
+    // telephony behavior yet (auto-redial, reminders, vibration pattern,
+    // call-waiting sound) -- that's follow-up work.
+    fun redialAutomatically(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_REDIAL_AUTO, false)
+
+    fun setRedialAutomatically(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_REDIAL_AUTO, value).apply()
+    }
+
+    fun missedCallReminder(context: Context): String =
+        prefs(context).getString(KEY_MISSED_CALL_REMINDER, "No reminder") ?: "No reminder"
+
+    fun setMissedCallReminder(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_MISSED_CALL_REMINDER, value).apply()
+    }
+
+    fun vibrateOnAnswer(context: Context): String =
+        prefs(context).getString(KEY_VIBRATE_ON_ANSWER, "Normal") ?: "Normal"
+
+    fun setVibrateOnAnswer(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_VIBRATE_ON_ANSWER, value).apply()
+    }
+
+    fun callWaitingNotification(context: Context): String =
+        prefs(context).getString(KEY_CALL_WAITING_NOTIFICATION, "Play notification sound continuously")
+            ?: "Play notification sound continuously"
+
+    fun setCallWaitingNotification(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_CALL_WAITING_NOTIFICATION, value).apply()
+    }
+
+    fun quickResponsesEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_QUICK_RESPONSES, true)
+
+    fun setQuickResponsesEnabled(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_QUICK_RESPONSES, value).apply()
     }
 }
 

@@ -103,7 +103,7 @@ fun MainScreen() {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .padding(horizontal = 20.dp, vertical = 4.dp)
                     .fillMaxWidth()
                     .height(64.dp)
                     .liquidGlass(shape = RoundedCornerShape(32.dp)),

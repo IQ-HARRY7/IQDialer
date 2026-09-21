@@ -91,6 +91,33 @@ private fun loadCallLogFromProvider(context: Context): List<CallLogEntry> {
     return entries
 }
 
+data class GroupedCallLogEntry(
+    val number: String,
+    val name: String?,
+    val type: Int,
+    val date: Long,
+    val count: Int
+)
+
+// Collapses consecutive calls to/from the same number into one row with a
+// count, same as the system dialer does. Used to live in RecentsScreen and
+// re-run on every recomposition -- since AnimatedContent disposes and
+// rebuilds RecentsScreen on every tab switch, that meant regrouping the
+// entire call log every single time you switched tabs. Grouped here instead,
+// once per actual data change, off the main thread.
+private fun groupConsecutive(entries: List<CallLogEntry>): List<GroupedCallLogEntry> {
+    val result = mutableListOf<GroupedCallLogEntry>()
+    for (entry in entries) {
+        val last = result.lastOrNull()
+        if (last != null && last.number == entry.number) {
+            result[result.size - 1] = last.copy(count = last.count + 1)
+        } else {
+            result.add(GroupedCallLogEntry(entry.number, entry.name, entry.type, entry.date, 1))
+        }
+    }
+    return result
+}
+
 object DataCache {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var observersRegistered = false
@@ -102,6 +129,12 @@ object DataCache {
 
     private val _callLog = MutableStateFlow<List<CallLogEntry>?>(null)
     val callLog: StateFlow<List<CallLogEntry>?> = _callLog
+
+    // Pre-grouped, off the main thread, whenever the raw call log actually
+    // changes -- RecentsScreen observes this directly instead of grouping
+    // on every recomposition.
+    private val _groupedCallLog = MutableStateFlow<List<GroupedCallLogEntry>?>(null)
+    val groupedCallLog: StateFlow<List<GroupedCallLogEntry>?> = _groupedCallLog
 
     // Idempotent -- safe to call from every screen's entry and every
     // recomposition. Only the very first call for each list does
@@ -117,8 +150,14 @@ object DataCache {
         }
         if (!callLogLoadStarted) {
             callLogLoadStarted = true
-            scope.launch { _callLog.value = loadCallLogFromProvider(appContext) }
+            scope.launch { refreshCallLog(appContext) }
         }
+    }
+
+    private suspend fun refreshCallLog(context: Context) {
+        val entries = loadCallLogFromProvider(context)
+        _callLog.value = entries
+        _groupedCallLog.value = groupConsecutive(entries)
     }
 
     // Registered once, lives for the process. This -- not a timer -- is
@@ -142,7 +181,7 @@ object DataCache {
             CallLog.Calls.CONTENT_URI, true,
             object : ContentObserver(handler) {
                 override fun onChange(selfChange: Boolean) {
-                    scope.launch { _callLog.value = loadCallLogFromProvider(appContext) }
+                    scope.launch { refreshCallLog(appContext) }
                 }
             }
         )

@@ -10,7 +10,10 @@
 
 package com.iqstudio.dialer
 
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.provider.CallLog
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -20,7 +23,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,28 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
-
-private data class GroupedEntry(
-    val number: String,
-    val name: String?,
-    val type: Int,
-    val date: Long,
-    val count: Int
-)
-
-private fun groupConsecutive(entries: List<CallLogEntry>): List<GroupedEntry> {
-    val result = mutableListOf<GroupedEntry>()
-    for (entry in entries) {
-        val last = result.lastOrNull()
-        if (last != null && last.number == entry.number) {
-            result[result.size - 1] = last.copy(count = last.count + 1)
-        } else {
-            result.add(GroupedEntry(entry.number, entry.name, entry.type, entry.date, 1))
-        }
-    }
-    return result
-}
 
 private fun callDirectionGlyph(type: Int): String = when (type) {
     CallLog.Calls.OUTGOING_TYPE -> "\u2197"
@@ -92,20 +76,28 @@ private sealed interface RecentsPane : NestedPane {
 @Composable
 fun RecentsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
-    val rawEntriesOrNull by DataCache.callLog.collectAsState()
+    val groupedOrNull by DataCache.groupedCallLog.collectAsState()
     LaunchedEffect(Unit) { DataCache.ensureLoaded(context) }
-    val rawEntries = rawEntriesOrNull ?: emptyList()
-    val loaded = rawEntriesOrNull != null
+    val grouped = groupedOrNull ?: emptyList()
+    val loaded = groupedOrNull != null
     var query by remember { mutableStateOf("") }
     var selectedNumber by remember { mutableStateOf<String?>(null) }
     var showDialpad by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
 
     val nested = showSettings || selectedNumber != null
-    LaunchedEffect(nested) { onNestedScreenChange(nested) }
+    LaunchedEffect(nested) {
+        onNestedScreenChange(nested)
+        // Leaving the list pane (Settings, a contact) always closes the
+        // dialpad -- it used to just sit open-but-buried and pop straight
+        // back with no animation when you returned. The typed number
+        // itself lives in DialpadState below, not here, so it survives
+        // this close.
+        if (nested) showDialpad = false
+    }
     DisposableEffect(Unit) { onDispose { onNestedScreenChange(false) } }
+    BackHandler(enabled = showDialpad) { showDialpad = false }
 
-    val grouped = remember(rawEntries) { groupConsecutive(rawEntries) }
     val filtered = remember(grouped, query) {
         if (query.isBlank()) grouped
         else grouped.filter {
@@ -167,7 +159,7 @@ fun RecentsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
                             }
                             "empty" -> Box(modifier = Modifier.fillMaxSize()) {
                                 Text(
-                                    if (rawEntries.isEmpty()) "No call history yet" else "No matches",
+                                    if (grouped.isEmpty()) "No call history yet" else "No matches",
                                     color = TextSecondary,
                                     modifier = Modifier.align(Alignment.Center)
                                 )
@@ -176,7 +168,7 @@ fun RecentsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(bottom = 88.dp)
                             ) {
-                                items(filtered, key = { "${it.number}_${it.date}" }) { entry ->
+                                items(filtered, key = { it.number + "_" + it.date }) { entry ->
                                     val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
                                     GlassRow(
                                         onClick = { selectedNumber = entry.number },
@@ -218,28 +210,33 @@ fun RecentsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(20.dp)
-                        .size(56.dp)
-                        .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
-                        .pressScale(onClick = { showDialpad = !showDialpad }),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Crossfade(targetState = showDialpad, label = "fabIcon") { open ->
-                        Icon(
-                            if (open) Icons.Filled.Close else Icons.Filled.Call,
-                            contentDescription = if (open) "Close dialpad" else "Dialpad",
-                            tint = Color.White
-                        )
+                // FAB only exists to open the dialpad -- once it's open, the
+                // panel's own close button (bottom-right inside it) is the
+                // way out, so the FAB steps aside instead of sitting
+                // uselessly underneath the (now much bigger) sheet.
+                if (!showDialpad) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(20.dp)
+                            .size(56.dp)
+                            .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
+                            .pressScale(onClick = { showDialpad = true }),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Call, contentDescription = "Dialpad", tint = Color.White)
                     }
                 }
 
                 AnimatedVisibility(
                     visible = showDialpad,
+                    // Same lesson as the tab-switch spec in MainActivity:
+                    // StiffnessMediumLow reads as lag, not a spring.
+                    // StiffnessMedium on both enter and exit keeps the
+                    // up-when-opening/down-when-closing motion but settles
+                    // fast instead of feeling buffered.
                     enter = slideInVertically(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
                         initialOffsetY = { it }
                     ) + fadeIn(),
                     exit = slideOutVertically(
@@ -252,7 +249,8 @@ fun RecentsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
                         onCall = { number ->
                             placeCall(context, number)
                             showDialpad = false
-                        }
+                        },
+                        onClose = { showDialpad = false }
                     )
                 }
             }
@@ -269,74 +267,144 @@ private val DIAL_ROWS = listOf(
     listOf(DialKey("*", ""), DialKey("0", "+"), DialKey("#", ""))
 )
 
+// Digit -> DTMF tone. Only the 12 real keys produce a tone.
+private fun dtmfToneFor(digit: String): Int? = when (digit) {
+    "0" -> ToneGenerator.TONE_DTMF_0
+    "1" -> ToneGenerator.TONE_DTMF_1
+    "2" -> ToneGenerator.TONE_DTMF_2
+    "3" -> ToneGenerator.TONE_DTMF_3
+    "4" -> ToneGenerator.TONE_DTMF_4
+    "5" -> ToneGenerator.TONE_DTMF_5
+    "6" -> ToneGenerator.TONE_DTMF_6
+    "7" -> ToneGenerator.TONE_DTMF_7
+    "8" -> ToneGenerator.TONE_DTMF_8
+    "9" -> ToneGenerator.TONE_DTMF_9
+    "*" -> ToneGenerator.TONE_DTMF_S
+    "#" -> ToneGenerator.TONE_DTMF_P
+    else -> null
+}
+
+private const val DTMF_TONE_MS = 100
+
+// Keeps whatever's been typed on the dialpad across screen and tab
+// switches -- RecentsScreen (and everything inside it) gets fully disposed
+// and recomposed on every tab change, so a plain remember{} inside
+// EmbeddedDialpad was wiped every time. This is a plain object, so it
+// outlives that. Cleared once a call is actually placed.
+private object DialpadState {
+    var number by mutableStateOf("")
+}
+
 @Composable
-private fun EmbeddedDialpad(onCall: (String) -> Unit, modifier: Modifier = Modifier) {
-    var number by remember { mutableStateOf("") }
+private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val soundEnabled = remember { AppPrefs.dialpadSoundEnabled(context) }
+    val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_DTMF, ToneGenerator.MAX_VOLUME) }
+    DisposableEffect(Unit) { onDispose { toneGenerator.release() } }
+
+    fun press(key: DialKey) {
+        DialpadState.number += key.digit
+        if (soundEnabled) {
+            dtmfToneFor(key.digit)?.let { toneGenerator.startTone(it, DTMF_TONE_MS) }
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(SurfaceCard, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .fillMaxHeight(0.55f)
+            // Standard white Liquid Glass tint (not the black override from
+            // last round -- that fixed legibility but lost the floating
+            // glass look). Higher alpha than the 0.18 default instead: still
+            // reads as glass, but opaque enough not to wash out over a busy
+            // background.
+            .liquidGlass(shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), tintAlpha = 0.4f)
+            // Absorbs any tap that lands in the gaps between keys instead of
+            // letting it fall through to whatever's underneath (the Recents
+            // list was catching those taps and opening a contact).
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.SpaceEvenly
     ) {
-        Text(
-            number.ifEmpty { " " },
-            fontSize = 20.sp,
-            color = TextPrimary,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-        )
+        // Backspace lives next to the number itself, like the stock dialer --
+        // not in the bottom control row -- and only shows once there's
+        // something to delete.
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                DialpadState.number.ifEmpty { " " },
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Light,
+                color = Color.White,
+                modifier = Modifier.weight(1f)
+            )
+            Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                if (DialpadState.number.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .pressScale { DialpadState.number = DialpadState.number.dropLast(1) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("\u232B", fontSize = 18.sp, color = TextSecondary)
+                    }
+                }
+            }
+        }
         DIAL_ROWS.forEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 row.forEach { key ->
+                    // Flat, no button chip -- matches the reference photos
+                    // exactly (plain text on black, no circular outline).
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
                         modifier = Modifier
-                            .size(52.dp)
+                            .size(72.dp)
                             .clip(CircleShape)
-                            .background(SurfaceCardHigh)
-                            .pressScale { number += key.digit },
-                        verticalArrangement = Arrangement.Center
+                            .pressScale { press(key) }
                     ) {
-                        Text(key.digit, fontSize = 19.sp, color = TextPrimary)
+                        Text(key.digit, fontSize = 30.sp, color = Color.White)
                         if (key.sub.isNotEmpty()) {
-                            Text(key.sub, fontSize = 9.sp, color = TextSecondary)
+                            Text(key.sub, fontSize = 11.sp, color = TextSecondary, letterSpacing = 1.sp)
                         }
                     }
                 }
             }
         }
+        // Left slot stays empty and reserved so the call button lands
+        // dead centre. Right: close -- lives here instead of only on the
+        // outer FAB so it's always reachable no matter how tall this
+        // panel is.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Spacer(modifier = Modifier.size(44.dp))
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(if (number.isNotEmpty()) SurfaceCardHigh else Color.Transparent)
-                    .then(
-                        if (number.isNotEmpty()) Modifier.pressScale { number = number.dropLast(1) } else Modifier
-                    ),
+                    .size(64.dp)
+                    .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
+                    .pressScale(onClick = {
+                        if (DialpadState.number.isNotEmpty()) {
+                            onCall(DialpadState.number)
+                            DialpadState.number = ""
+                        }
+                    }),
                 contentAlignment = Alignment.Center
             ) {
-                if (number.isNotEmpty()) {
-                    Text("\u232B", fontSize = 17.sp, color = TextSecondary)
-                }
+                Icon(Icons.Filled.Call, contentDescription = "Call", tint = Color.White, modifier = Modifier.size(24.dp))
             }
             Box(
                 modifier = Modifier
-                    .size(52.dp)
-                    .liquidGlass(shape = CircleShape, tint = CallGreen, tintAlpha = 0.75f)
-                    .pressScale(onClick = { if (number.isNotEmpty()) onCall(number) }),
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .pressScale(onClick = onClose),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Call, contentDescription = "Call", tint = Color.White, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.Close, contentDescription = "Close dialpad", tint = TextSecondary, modifier = Modifier.size(20.dp))
             }
         }
     }
 }
-

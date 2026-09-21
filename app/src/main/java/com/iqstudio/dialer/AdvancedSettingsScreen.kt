@@ -23,6 +23,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -65,6 +66,12 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var backgrounds by remember { mutableStateOf(AppPrefs.backgrounds(context)) }
     var editingItem by remember { mutableStateOf<BackgroundItem?>(null) }
+    var dialpadSound by remember { mutableStateOf(AppPrefs.dialpadSoundEnabled(context)) }
+    var redialAuto by remember { mutableStateOf(AppPrefs.redialAutomatically(context)) }
+    var missedCallReminder by remember { mutableStateOf(AppPrefs.missedCallReminder(context)) }
+    var vibrateOnAnswer by remember { mutableStateOf(AppPrefs.vibrateOnAnswer(context)) }
+    var callWaitingNotification by remember { mutableStateOf(AppPrefs.callWaitingNotification(context)) }
+    var quickResponses by remember { mutableStateOf(AppPrefs.quickResponsesEnabled(context)) }
 
     val pane: AdvancedPane = editingItem?.let { AdvancedPane.Editing(it) } ?: AdvancedPane.Main
 
@@ -85,6 +92,12 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
             )
             AdvancedPane.Main -> {
                 BackHandler(onBack = onBack)
+
+                val switchColors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = GlassTint,
+                    checkedBorderColor = GlassTint
+                )
 
                 val pickMedia = rememberLauncherForActivityResult(
                     ActivityResultContracts.PickMultipleVisualMedia(20)
@@ -196,12 +209,154 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Stock-dialer style "Dialer" / "Answering and Calls" / "Other"
+                        // groups James asked for -- basic scaffolding for now: the
+                        // toggles and pickers here save a preference, but none of them
+                        // are wired to real telephony behavior yet (that's follow-up
+                        // work, one feature at a time). "Caller ID" isn't included --
+                        // its rows weren't visible in the reference screenshot.
+                        GlassCard {
+                            Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+                                Text("Dialer", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+                            }
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                headlineContent = { Text("Dial pad touch tones", color = TextPrimary) },
+                                supportingContent = { Text("Play a tone when you tap a dialpad key", color = TextSecondary) },
+                                trailingContent = {
+                                    Switch(
+                                        checked = dialpadSound,
+                                        onCheckedChange = {
+                                            dialpadSound = it
+                                            AppPrefs.setDialpadSound(context, it)
+                                        },
+                                        colors = switchColors
+                                    )
+                                }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                headlineContent = { Text("Quick dial", color = TextPrimary) },
+                                supportingContent = { Text("Assign contacts to number keys -- coming soon", color = TextSecondary) }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                headlineContent = { Text("Redial automatically", color = TextPrimary) },
+                                supportingContent = { Text("Redial automatically if the line is busy", color = TextSecondary) },
+                                trailingContent = {
+                                    Switch(
+                                        checked = redialAuto,
+                                        onCheckedChange = {
+                                            redialAuto = it
+                                            AppPrefs.setRedialAutomatically(context, it)
+                                        },
+                                        colors = switchColors
+                                    )
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        GlassCard {
+                            Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+                                Text("Answering and Calls", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+                            }
+                            PickerRow(
+                                title = "Missed call reminders",
+                                subtitle = "Reminders are separated by 5 minute intervals",
+                                value = missedCallReminder,
+                                options = listOf("No reminder", "Once", "Every 5 minutes"),
+                                onSelect = {
+                                    missedCallReminder = it
+                                    AppPrefs.setMissedCallReminder(context, it)
+                                }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            PickerRow(
+                                title = "Vibrate when your call is answered",
+                                value = vibrateOnAnswer,
+                                options = listOf("Off", "Normal"),
+                                onSelect = {
+                                    vibrateOnAnswer = it
+                                    AppPrefs.setVibrateOnAnswer(context, it)
+                                }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            PickerRow(
+                                title = "Call waiting notification",
+                                value = callWaitingNotification,
+                                options = listOf("Play notification sound once", "Play notification sound continuously"),
+                                onSelect = {
+                                    callWaitingNotification = it
+                                    AppPrefs.setCallWaitingNotification(context, it)
+                                }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                headlineContent = { Text("Quick responses", color = TextPrimary) },
+                                supportingContent = { Text("Preset texts for declining a call with a message", color = TextSecondary) },
+                                trailingContent = {
+                                    Switch(
+                                        checked = quickResponses,
+                                        onCheckedChange = {
+                                            quickResponses = it
+                                            AppPrefs.setQuickResponsesEnabled(context, it)
+                                        },
+                                        colors = switchColors
+                                    )
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        GlassCard {
+                            Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+                                Text("Other", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+                            }
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                headlineContent = { Text("Call barring", color = TextPrimary) },
+                                supportingContent = { Text("Voice call barring settings -- coming soon", color = TextSecondary) }
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(24.dp))
                     }
                 }
             }
         }
     }
+}
+
+// Value + tap-to-pick-from-a-short-list row, shared by the three "Answering
+// and Calls" pickers above. Nothing fancier than a DropdownMenu -- these
+// aren't wired to real behavior yet, so a bigger picker UI isn't earned yet.
+@Composable
+private fun PickerRow(title: String, subtitle: String? = null, value: String, options: List<String>, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    ListItem(
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.clickable { expanded = true },
+        headlineContent = { Text(title, color = TextPrimary) },
+        supportingContent = subtitle?.let { { Text(it, color = TextSecondary) } },
+        trailingContent = {
+            Box {
+                Text(value, color = TextSecondary, fontSize = 13.sp)
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    options.forEach { option ->
+                        DropdownMenuItem(text = { Text(option) }, onClick = { onSelect(option); expanded = false })
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable

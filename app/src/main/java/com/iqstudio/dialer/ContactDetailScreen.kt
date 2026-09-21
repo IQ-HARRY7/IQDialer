@@ -106,14 +106,6 @@ private fun addToContacts(context: Context, number: String) {
     context.startActivity(intent)
 }
 
-private fun editContact(context: Context, contactId: Long) {
-    val uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contactId.toString())
-    val intent = Intent(Intent.ACTION_EDIT).apply {
-        setDataAndType(uri, ContactsContract.Contacts.CONTENT_ITEM_TYPE)
-    }
-    context.startActivity(intent)
-}
-
 // ACTION_DIAL, not ACTION_CALL -- the shortcut intent fires from the
 // launcher's process, which doesn't hold CALL_PHONE. DIAL just opens our
 // own MainActivity pre-filled (it already has the intent-filter for this),
@@ -180,6 +172,7 @@ private fun unblockNumber(context: Context, number: String) {
 private sealed interface ContactDetailPane : NestedPane {
     object Main : ContactDetailPane { override val paneDepth = 0 }
     object FullHistory : ContactDetailPane { override val paneDepth = 1 }
+    data class Edit(val contactId: Long) : ContactDetailPane { override val paneDepth = 1 }
 }
 
 @Composable
@@ -190,15 +183,21 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
     var menuExpanded by remember { mutableStateOf(false) }
     var isBlocked by remember { mutableStateOf(false) }
     var showFullHistory by remember { mutableStateOf(false) }
+    var editingContactId by remember { mutableStateOf<Long?>(null) }
+    var refreshKey by remember { mutableStateOf(0) }
     val formatter = java.text.SimpleDateFormat("MMM d, " + AppPrefs.timePattern(context), java.util.Locale.getDefault())
 
-    LaunchedEffect(phoneNumber) {
+    LaunchedEffect(phoneNumber, refreshKey) {
         lookup = withContext(Dispatchers.IO) { lookupContactByNumber(context, phoneNumber) }
         history = withContext(Dispatchers.IO) { loadHistoryForNumber(context, phoneNumber) }
         isBlocked = withContext(Dispatchers.IO) { BlockedNumberContract.isBlocked(context, phoneNumber) }
     }
 
-    val pane: ContactDetailPane = if (showFullHistory) ContactDetailPane.FullHistory else ContactDetailPane.Main
+    val pane: ContactDetailPane = when {
+        editingContactId != null -> ContactDetailPane.Edit(editingContactId!!)
+        showFullHistory -> ContactDetailPane.FullHistory
+        else -> ContactDetailPane.Main
+    }
 
     AnimatedContent(
         targetState = pane,
@@ -207,6 +206,11 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
     ) { currentPane ->
         when (currentPane) {
             ContactDetailPane.FullHistory -> CallHistoryDetailScreen(phoneNumber = phoneNumber, onBack = { showFullHistory = false })
+            is ContactDetailPane.Edit -> EditContactScreen(
+                contactId = currentPane.contactId,
+                onBack = { editingContactId = null },
+                onSaved = { editingContactId = null; refreshKey++ }
+            )
             ContactDetailPane.Main -> {
                 BackHandler(onBack = onBack)
 
@@ -256,7 +260,7 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
                             text = { Text("Edit contact") },
                             onClick = {
                                 menuExpanded = false
-                                lookup.contactId?.let { editContact(context, it) }
+                                lookup.contactId?.let { editingContactId = it }
                             }
                         )
                         DropdownMenuItem(
