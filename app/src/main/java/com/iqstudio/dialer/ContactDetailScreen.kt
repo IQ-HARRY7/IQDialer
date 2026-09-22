@@ -416,3 +416,5 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
         }
     }
 }
+
+// Now we're talking 💪

@@ -5,14 +5,7 @@
 // *
 //**************************************************
 
-// Shared, app-lifetime cache for the full contacts and call-log lists.
-// RecentsScreen and ContactsScreen both read from here now instead of
-// querying their ContentProvider fresh on every visit -- that re-query,
-// not the transition animation, is what was actually adding a buffer.
-// Kept in sync the way WhatsApp/Telegram/File Manager etc actually do it:
-// a ContentObserver on the real provider, refreshing only when the OS
-// says something changed. No timer, no 24/7 polling loop -- idle unless
-// data actually changes, which is the entire point.
+// simply - the whole cache service. 
 package com.iqstudio.dialer
 
 import android.content.Context
@@ -99,12 +92,6 @@ data class GroupedCallLogEntry(
     val count: Int
 )
 
-// Collapses consecutive calls to/from the same number into one row with a
-// count, same as the system dialer does. Used to live in RecentsScreen and
-// re-run on every recomposition -- since AnimatedContent disposes and
-// rebuilds RecentsScreen on every tab switch, that meant regrouping the
-// entire call log every single time you switched tabs. Grouped here instead,
-// once per actual data change, off the main thread.
 private fun groupConsecutive(entries: List<CallLogEntry>): List<GroupedCallLogEntry> {
     val result = mutableListOf<GroupedCallLogEntry>()
     for (entry in entries) {
@@ -129,18 +116,10 @@ object DataCache {
 
     private val _callLog = MutableStateFlow<List<CallLogEntry>?>(null)
     val callLog: StateFlow<List<CallLogEntry>?> = _callLog
-
-    // Pre-grouped, off the main thread, whenever the raw call log actually
-    // changes -- RecentsScreen observes this directly instead of grouping
-    // on every recomposition.
+    
     private val _groupedCallLog = MutableStateFlow<List<GroupedCallLogEntry>?>(null)
     val groupedCallLog: StateFlow<List<GroupedCallLogEntry>?> = _groupedCallLog
 
-    // Idempotent -- safe to call from every screen's entry and every
-    // recomposition. Only the very first call for each list does
-    // anything; after that the StateFlow already holds the current data
-    // and stays current on its own via the observers below, so switching
-    // tabs is just reading an already-populated value, not a fresh query.
     fun ensureLoaded(context: Context) {
         ensureObservers(context)
         val appContext = context.applicationContext
@@ -159,11 +138,7 @@ object DataCache {
         _callLog.value = entries
         _groupedCallLog.value = groupConsecutive(entries)
     }
-
-    // Registered once, lives for the process. This -- not a timer -- is
-    // the "sync" a production app actually wants: the OS tells us
-    // something changed, we refresh just that one list, we go back to
-    // idle. Zero cost the rest of the time.
+    
     private fun ensureObservers(context: Context) {
         if (observersRegistered) return
         observersRegistered = true
@@ -188,3 +163,4 @@ object DataCache {
     }
 }
 
+// end

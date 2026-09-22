@@ -1,11 +1,12 @@
 // This was the hardest part, took 3 weeks, to debug & implement everything. @IQ_HARRY_07
 
-//****************************************************
+/* ================================================================
 // *
 // * Copyright© IQ-STUDIO 2026 (ptv limited)
 // * IQDialer project uses GPL3 (or later).
 // *
-//****************************************************
+   ================================================================
+*/
 
 package com.iqstudio.dialer
 
@@ -62,24 +63,18 @@ fun MainScreen() {
     var selectedTab by remember { mutableStateOf(0) }
     var isNested by remember { mutableStateOf(false) }
 
+    val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val pillReservedHeight = navBarInset + 72.dp
+
     Box(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize().padding(bottom = 88.dp)) {
+        Box(modifier = Modifier.fillMaxSize().padding(bottom = pillReservedHeight)) {
             AnimatedContent(
                 targetState = selectedTab,
                 transitionSpec = {
                     val forward = targetState > initialState
-                    // StiffnessMediumLow (400f) is what actually read as a
-                    // buffer switching tabs -- the data underneath was
-                    // never the problem, composition is preserved across
-                    // switches so nothing was re-querying. Just a spring
-                    // that took too long to settle. StiffnessMedium (1500f)
-                    // keeps the same directional slide, snaps into place
-                    // properly fast.
+
                     val spec = spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
-                    // Deliberately a subtler partial-width shift than the
-                    // full push/pop slide nested screens use -- a tab
-                    // switch is a lateral move between siblings, not
-                    // navigating deeper, so it reads as lighter motion.
+                    
                     if (forward) {
                         (slideInHorizontally(spec) { it / 4 } + fadeIn())
                             .togetherWith(slideOutHorizontally(spec) { -it / 4 } + fadeOut())
@@ -165,4 +160,4 @@ private fun RowScope.FloatingNavItem(
     }
 }
 
-
+// THE END 🔚.

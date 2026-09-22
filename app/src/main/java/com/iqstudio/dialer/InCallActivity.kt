@@ -479,9 +479,6 @@ private fun SmallToggleButton(
     }
 }
 
-// Plain dot rather than an icon on purpose -- keeps this independent of any
-// specific icon existing in whatever material-icons-core version is on the
-// classpath. Red glass + white center while recording, the reverse otherwise.
 @Composable
 private fun RecordToggleButton(active: Boolean, onClick: () -> Unit) {
     Box(
@@ -500,3 +497,4 @@ private fun RecordToggleButton(active: Boolean, onClick: () -> Unit) {
     }
 }
 
+// ?

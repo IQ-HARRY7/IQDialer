@@ -5,6 +5,7 @@
 // *
 //**************************************************
 
+// Second screen - ✌️
 // Second interface of Dialer. <set view>
 
 package com.iqstudio.dialer

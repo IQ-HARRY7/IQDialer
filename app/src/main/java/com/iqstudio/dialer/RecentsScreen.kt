@@ -147,62 +147,72 @@ fun RecentsScreen(onNestedScreenChange: (Boolean) -> Unit = {}) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    val listState = when {
-                        !loaded -> "loading"
-                        filtered.isEmpty() -> "empty"
-                        else -> "list"
-                    }
-                    Crossfade(targetState = listState, label = "recentsListState") { state ->
-                        when (state) {
-                            "loading" -> Box(modifier = Modifier.fillMaxSize()) {
-                                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                            }
-                            "empty" -> Box(modifier = Modifier.fillMaxSize()) {
-                                Text(
-                                    if (grouped.isEmpty()) "No call history yet" else "No matches",
-                                    color = TextSecondary,
-                                    modifier = Modifier.align(Alignment.Center)
-                                )
-                            }
-                            else -> LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 88.dp)
-                            ) {
-                                items(filtered, key = { it.number + "_" + it.date }) { entry ->
-                                    val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
-                                    GlassRow(
-                                        onClick = { selectedNumber = entry.number },
-                                        modifier = Modifier.animateItem()
-                                    ) {
-                                        ContactAvatar(name = entry.name)
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                entry.name ?: entry.number,
-                                                fontSize = 16.sp,
-                                                color = if (missed) CallRed else TextPrimary
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The list's own text (names, dates) is what was showing
+                    // through the dialpad and making it unreadable -- not a
+                    // tintAlpha problem, since Liquid Glass at its normal
+                    // settings reads fine over the plain background photo
+                    // everywhere else in the app. It's hidden (not just
+                    // covered) while the dialpad's open; the list isn't
+                    // usable underneath it anyway, and this is what actually
+                    // fixes legibility instead of guessing at opacity.
+                    if (!showDialpad) {
+                        val listState = when {
+                            !loaded -> "loading"
+                            filtered.isEmpty() -> "empty"
+                            else -> "list"
+                        }
+                        Crossfade(targetState = listState, label = "recentsListState") { state ->
+                            when (state) {
+                                "loading" -> Box(modifier = Modifier.fillMaxSize()) {
+                                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                                }
+                                "empty" -> Box(modifier = Modifier.fillMaxSize()) {
+                                    Text(
+                                        if (grouped.isEmpty()) "No call history yet" else "No matches",
+                                        color = TextSecondary,
+                                        modifier = Modifier.align(Alignment.Center)
+                                    )
+                                }
+                                else -> LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(bottom = 88.dp)
+                                ) {
+                                    items(filtered, key = { it.number + "_" + it.date }) { entry ->
+                                        val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
+                                        GlassRow(
+                                            onClick = { selectedNumber = entry.number },
+                                            modifier = Modifier.animateItem()
+                                        ) {
+                                            ContactAvatar(name = entry.name)
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    callDirectionGlyph(entry.type),
-                                                    fontSize = 12.sp,
-                                                    color = callDirectionColor(entry.type)
+                                                    entry.name ?: entry.number,
+                                                    fontSize = 16.sp,
+                                                    color = if (missed) CallRed else TextPrimary
                                                 )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    callTypeLabel(entry.type) +
-                                                        (if (entry.count > 1) " (" + entry.count + ")" else ""),
-                                                    fontSize = 13.sp,
-                                                    color = TextSecondary
-                                                )
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        callDirectionGlyph(entry.type),
+                                                        fontSize = 12.sp,
+                                                        color = callDirectionColor(entry.type)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        callTypeLabel(entry.type) +
+                                                            (if (entry.count > 1) " (" + entry.count + ")" else ""),
+                                                        fontSize = 13.sp,
+                                                        color = TextSecondary
+                                                    )
+                                                }
                                             }
+                                            Text(
+                                                formatter.format(java.util.Date(entry.date)),
+                                                fontSize = 11.sp,
+                                                color = TextSecondary
+                                            )
                                         }
-                                        Text(
-                                            formatter.format(java.util.Date(entry.date)),
-                                            fontSize = 11.sp,
-                                            color = TextSecondary
-                                        )
                                     }
                                 }
                             }
@@ -313,12 +323,12 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
         modifier = modifier
             .fillMaxWidth()
             .fillMaxHeight(0.55f)
-            // Standard white Liquid Glass tint (not the black override from
-            // last round -- that fixed legibility but lost the floating
-            // glass look). Higher alpha than the 0.18 default instead: still
-            // reads as glass, but opaque enough not to wash out over a busy
-            // background.
-            .liquidGlass(shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), tintAlpha = 0.4f)
+            // Plain default Liquid Glass -- same as every other surface in
+            // the app. The custom tint/opaque-base attempts from the last
+            // two rounds were fighting the wrong problem: it's fine at
+            // default settings once there's nothing text-heavy rendering
+            // behind it (see the list-hiding change above).
+            .liquidGlass(shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
             // Absorbs any tap that lands in the gaps between keys instead of
             // letting it fall through to whatever's underneath (the Recents
             // list was catching those taps and opening a contact).

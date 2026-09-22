@@ -6,6 +6,8 @@
 //**************************************************
 
 // in-app contact editor -- replaces the old system ACTION_EDIT handoff.
+// needs so much improvements. 
+
 package com.iqstudio.dialer
 
 import android.content.ContentProviderOperation
@@ -402,3 +404,5 @@ fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) 
         }
     }
 }
+
+// end. end doesn't always means end.

@@ -504,6 +504,51 @@ private fun BackgroundFitEditor(
     }
 }
 
+
+/*
+ ✨✨✨✨✨✨✨✨✨✨, NINJA TECHNIQUE TO GET ATTENTION - still in development, already implemented, need further improvements.
+
+
+private fun snapToEdge(view: View, layoutParams: WindowManager.LayoutParams) {
+        val screenWidth = resources.displayMetrics.widthPixels
+        val bubbleWidth = view.width.takeIf { it > 0 } ?: dp(140)
+        val targetX = if (layoutParams.x + bubbleWidth / 2 < screenWidth / 2) dp(16) else screenWidth - bubbleWidth - dp(16)
+
+        val startX = layoutParams.x
+        val animator = android.animation.ValueAnimator.ofInt(startX, targetX)
+        animator.duration = 220
+        animator.interpolator = android.view.animation.DecelerateInterpolator()
+        animator.addUpdateListener { anim ->
+            layoutParams.x = anim.animatedValue as Int
+            windowManager.updateViewLayout(view, layoutParams)
+        }
+        animator.start()
+    }
+
+    private fun openFullCallScreen() {
+        val intent = Intent(this, InCallActivity::class.java)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        registeredCall?.unregisterCallback(callCallback)
+        stopRingtoneAudio()
+        bubbleView?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                // view already gone -- fine
+            }
+        }
+        bubbleView = null
+        super.onDestroy()
+    }
+}
+
+*/
+
 private suspend fun loadThumbnail(context: Context, item: BackgroundItem): Bitmap? = withContext(Dispatchers.IO) {
     if (item.isVideo) {
         val retriever = MediaMetadataRetriever()
@@ -535,3 +580,36 @@ private fun probeHasAudio(context: Context, uri: Uri): Boolean {
         retriever.release()
     }
 }
+
+/*. TEMPORARILY DISABLED --> 
+
+
+un lookupContactName(context: Context, number: String): String? {
+    if (!hasContactsPermission(context)) return null
+    val lookupUri = Uri.withAppendedPath(
+        ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+        Uri.encode(number)
+    )
+    return try {
+        context.contentResolver.query(
+            lookupUri,
+            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+            null, null, null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                if (idx >= 0) cursor.getString(idx) else null
+            } else {
+                null
+            }
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+*/
+
+
+// HOPE IS BEAUTIFUL ❤️
+
+// Wen Give a star sar? 😭🥀

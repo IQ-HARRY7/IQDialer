@@ -163,5 +163,5 @@ fun SplashScreen(onReady: () -> Unit) {
 }
 
 
-// anyways nothing to explain, it will modified soon. 
+// It is now usable.
 

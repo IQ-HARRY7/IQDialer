@@ -147,7 +147,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                                 headlineContent = { Text("About", color = TextPrimary) },
-                                supportingContent = { Text("IQ Dialer 0.1", color = TextSecondary) }
+                                supportingContent = { Text("IQ Dialer V-1.0", color = TextSecondary) }
                             )
                         }
 

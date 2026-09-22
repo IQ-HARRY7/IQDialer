@@ -119,3 +119,4 @@ fun CallHistoryDetailScreen(phoneNumber: String, onBack: () -> Unit) {
     }
 }
 
+// Pro me. i created a different screen & file for this 🤡

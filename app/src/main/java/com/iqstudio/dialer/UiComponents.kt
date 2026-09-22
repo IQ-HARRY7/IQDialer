@@ -171,21 +171,8 @@ fun VideoBackgroundPlayer(
     )
 }
 
-// The one background image behind every screen (Recents/Contacts/Settings/
-// Advanced/Blocklist/Splash -- everywhere except InCallActivity, which keeps
-// its own per-call photo/video background). Scrim alpha is a single tunable:
-// raise it if text legibility suffers against a busy photo, lower it if the
-// photo reads as too washed out. R.drawable.background_1 must exist on disk;
-// this file doesn't create it.
 private const val UniversalScrimAlpha = 0.62f
 
-// Decoded once per process, not once per Activity. painterResource() on its
-// own re-decodes the JPEG fresh every time a screen composes it -- Splash
-// and Main both do, every cold start -- which is real, measurable work for
-// a raster image this size. IQDialerApplication kicks off the first decode
-// on a background thread at process start, so this is usually already
-// populated by the time any screen actually needs it; the synchronized
-// block just makes the cold-path (nothing warmed it yet) safe too.
 object BackgroundImageCache {
     @Volatile private var bitmap: ImageBitmap? = null
     private val lock = Any()
@@ -221,27 +208,10 @@ fun UniversalBackground(content: @Composable () -> Unit) {
     }
 }
 
-// White, not blue -- kept the name GlassTint (used as the default tint
-// param everywhere) rather than renaming it across every file, but the
-// value is now white. Everything built on liquidGlass() inherits this
-// automatically since none of them hardcode a color. Red/green stay as
-// explicit overrides at their own call sites (delete, call, FAB), never
-// defaulted, so they're untouched by this change.
 val GlassTint = Color.White
 
-// Dark content color for anything sitting on a light/white glass surface
-// (the selected nav pill) -- matches the app's own background color for a
-// clean cutout look, and is the actual fix for white-on-white being
-// invisible.
 val DarkGlassContent = Color(0xFF101415)
 
-// No backdrop blur -- native Compose has no first-party way to blur
-// content behind a different composable on minSdk 29, and the available
-// libraries are alpha-stage across the board right now. Gradient + border
-// fake depth instead: brighter top fading to darker bottom, and a
-// diagonal-gradient border brightest at the top-left corner. White reads
-// as glass at meaningfully lower opacity than the old blue did -- these
-// defaults are tuned for white specifically, not just carried over.
 fun Modifier.liquidGlass(
     shape: Shape = RoundedCornerShape(28.dp),
     tint: Color = GlassTint,
@@ -345,11 +315,6 @@ fun GlassChip(
     }
 }
 
-// Glass container for grouping content (not a button) -- deliberately
-// lower opacity than the interactive components above. Opacity is the
-// signal for tappability across this whole system: higher-opacity glass
-// means "you can press this," lower-opacity glass means "this is grouped
-// content."
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
@@ -365,10 +330,6 @@ fun GlassCard(
     )
 }
 
-// Floating glass row for list items (Recents/Contacts) -- same idea as
-// GlassCard but sized and padded for a single clickable row rather than a
-// content section.
-@Composable
 fun GlassRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -387,3 +348,4 @@ fun GlassRow(
     )
 }
 
+// ;
