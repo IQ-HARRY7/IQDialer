@@ -330,6 +330,7 @@ fun GlassCard(
     )
 }
 
+@Composable
 fun GlassRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
