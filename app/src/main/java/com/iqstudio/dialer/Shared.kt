@@ -18,6 +18,15 @@ import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.TelecomManager
 import android.telecom.VideoProfile
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CallMade
+import androidx.compose.material.icons.filled.CallMissed
+import androidx.compose.material.icons.filled.CallReceived
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PhoneDisabled
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.ContextCompat
 
 data class CallLogEntry(
@@ -25,7 +34,8 @@ data class CallLogEntry(
     val name: String?,
     val type: Int,
     val date: Long,
-    val duration: Long = 0
+    val duration: Long = 0,
+    val id: Long = 0
 )
 
 fun hasCallLogPermission(context: Context): Boolean =
@@ -36,7 +46,7 @@ fun hasContactsPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
         PackageManager.PERMISSION_GRANTED
 
-// Call LOG entry type (history record) -- Incoming/Outgoing/Missed/etc.
+// Call LOG entry type
 fun callTypeLabel(type: Int): String = when (type) {
     CallLog.Calls.INCOMING_TYPE -> "Incoming"
     CallLog.Calls.OUTGOING_TYPE -> "Outgoing"
@@ -46,8 +56,17 @@ fun callTypeLabel(type: Int): String = when (type) {
     else -> "Call"
 }
 
-// LIVE call state (Call.STATE_*) -- used by both the notification and the
-// in-call screen so the two stay in sync.
+// LIVE call state (Call.STATE_*) 
+fun deleteCallLogEntries(context: Context, ids: List<Long>) {
+    if (ids.isEmpty()) return
+    try {
+        val where = CallLog.Calls._ID + " IN (" + ids.joinToString(",") + ")"
+        context.contentResolver.delete(CallLog.Calls.CONTENT_URI, where, null)
+    } catch (e: SecurityException) {
+        android.util.Log.e("CallLogDelete", "no WRITE_CALL_LOG", e)
+    }
+}
+
 fun callStateLabel(state: Int): String = when (state) {
     Call.STATE_RINGING -> "Incoming call"
     Call.STATE_DIALING -> "Calling..."
@@ -63,10 +82,16 @@ fun placeCall(context: Context, number: String) {
     telecomManager?.placeCall(Uri.fromParts("tel", number, null), null)
 }
 
+
+// !!! NOTE !!!
 // Requests bidirectional video; whether it actually becomes a video call
 // depends on VoLTE-video support on both the device/carrier and the far
 // end. That negotiation happens at the platform/carrier level, not here --
 // unsupported just means the call proceeds as audio, which is the fallback.
+
+// please don't Report anything regarding this X
+
+
 fun placeVideoCall(context: Context, number: String) {
     val telecomManager = context.getSystemService(TelecomManager::class.java)
     val extras = Bundle().apply {
@@ -75,10 +100,15 @@ fun placeVideoCall(context: Context, number: String) {
     telecomManager?.placeCall(Uri.fromParts("tel", number, null), extras)
 }
 
-// Matches the "Incoming: 8m 5s" / "Outgoing: 31 sec" style call history
-// detail line. No fabricated ring counts for missed calls -- CallLog
-// doesn't expose how many times a phone actually rang, so a missed or
-// declined entry says what it is instead of making a number up.
+fun callTypeVisual(type: Int): Pair<ImageVector, Color> = when (type) {
+    CallLog.Calls.INCOMING_TYPE -> Icons.Filled.CallReceived to AccentTeal
+    CallLog.Calls.OUTGOING_TYPE -> Icons.Filled.CallMade to AccentIndigo
+    CallLog.Calls.MISSED_TYPE -> Icons.Filled.CallMissed to CallRed
+    CallLog.Calls.REJECTED_TYPE -> Icons.Filled.PhoneDisabled to AccentOrange
+    CallLog.Calls.BLOCKED_TYPE -> Icons.Filled.Block to CallRed
+    else -> Icons.Filled.Phone to AccentViolet
+}
+
 fun describeCallHistory(entry: CallLogEntry): String {
     val durationText = if (entry.duration >= 60) {
         val m = entry.duration / 60

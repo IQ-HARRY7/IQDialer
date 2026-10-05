@@ -164,4 +164,5 @@ fun SplashScreen(onReady: () -> Unit) {
 
 
 // It is now usable.
-
+// it's only used while setup & it will only appear when the app specific permissions are missing (Revoked by user 💔)
+//

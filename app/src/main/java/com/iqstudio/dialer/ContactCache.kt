@@ -5,10 +5,7 @@
 // *
 //**************************************************
 
-// contact name cache -- lookupContactName() is a real ContentResolver query,
-// and TurboInCallService calls it on the main thread while a call is
-// ringing. cached in memory per process, cleared automatically whenever
-// contacts change so a renamed/deleted contact can't show a stale name.
+// contact name cache storing, onrefresh (statechange) :(
 package com.iqstudio.dialer
 
 import android.content.Context
@@ -19,8 +16,7 @@ import android.provider.ContactsContract
 import java.util.concurrent.ConcurrentHashMap
 
 object ContactCache {
-    // ConcurrentHashMap can't hold null values, and no real contact has an
-    // empty display name, so "" is the sentinel for "looked up, no contact".
+    // ConcurrentHashMap can't hold null values, and no real contact has an empty display name.
     private val cache = ConcurrentHashMap<String, String>()
     private var observerRegistered = false
 

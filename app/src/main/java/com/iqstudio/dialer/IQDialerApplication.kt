@@ -62,3 +62,4 @@ class IQDialerApplication : Application() {
 }
 
 // Dead! 
+// it was never used btw 🥴

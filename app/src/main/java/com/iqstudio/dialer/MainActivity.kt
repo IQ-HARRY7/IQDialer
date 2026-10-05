@@ -10,6 +10,7 @@
 
 package com.iqstudio.dialer
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -46,6 +47,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null && intent?.action == Intent.ACTION_DIAL) {
+            val number = intent.data?.schemeSpecificPart.orEmpty().filter { it.isDigit() || it in "+*#" }
+            DialpadState.open(number)
+        }
         setContent {
             IQDialerTheme {
                 UniversalBackground {

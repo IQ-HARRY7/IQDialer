@@ -16,8 +16,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -63,6 +64,7 @@ fun CallHistoryDetailScreen(phoneNumber: String, onBack: () -> Unit) {
     val context = LocalContext.current
     var history by remember { mutableStateOf<List<CallLogEntry>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
+    val notes = remember(phoneNumber) { AppPrefs.callNotes(context, phoneNumber).reversed() }
     val formatter = java.text.SimpleDateFormat("MMM d, " + AppPrefs.timePattern(context), java.util.Locale.getDefault())
 
     BackHandler(onBack = onBack)
@@ -99,17 +101,43 @@ fun CallHistoryDetailScreen(phoneNumber: String, onBack: () -> Unit) {
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
-                    items(history, key = { "${it.date}" }) { entry ->
+                    if (notes.isNotEmpty()) {
+                        item(key = "notes") {
+                            GlassCard(modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconChip(Icons.Filled.EditNote, AccentPink, size = 30.dp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text("Notes", fontSize = 13.sp, color = AccentSoft)
+                                    }
+                                    notes.forEach { (time, note) ->
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(formatter.format(java.util.Date(time)), fontSize = 11.sp, color = TextSecondary)
+                                        Text(note, fontSize = 15.sp, color = TextPrimary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    itemsIndexed(history, key = { index, item -> "${item.date}_$index" }) { _, entry ->
                         val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
                         GlassCard(modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp).animateItem()) {
-                            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                Text(
-                                    formatter.format(java.util.Date(entry.date)),
-                                    fontSize = 15.sp,
-                                    color = if (missed) CallRed else TextPrimary
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(describeCallHistory(entry), fontSize = 13.sp, color = TextSecondary)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val (typeIcon, typeAccent) = callTypeVisual(entry.type)
+                                IconChip(typeIcon, typeAccent)
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column {
+                                    Text(
+                                        formatter.format(java.util.Date(entry.date)),
+                                        fontSize = 15.sp,
+                                        color = if (missed) CallRed else TextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(describeCallHistory(entry), fontSize = 13.sp, color = TextSecondary)
+                                }
                             }
                         }
                     }

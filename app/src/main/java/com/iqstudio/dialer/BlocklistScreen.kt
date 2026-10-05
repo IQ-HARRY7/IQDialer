@@ -5,7 +5,7 @@
 // *
 //**************************************************
 
-// specific screen for Blacklist contacts. all side features will be included in one file in future. have some UI/UX issues, need to be fixed.
+// specific screen for Blacklist contacts. all side features will be included in one file in future.
 
 package com.iqstudio.dialer
 
@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -100,7 +101,11 @@ fun BlocklistScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(entry.number, color = TextPrimary)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconChip(Icons.Filled.Block, CallRed)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(entry.number, color = TextPrimary)
+                                }
                                 GlassIconButton(
                                     icon = Icons.Filled.Delete,
                                     contentDescription = "Unblock",
@@ -119,5 +124,5 @@ fun BlocklistScreen(onBack: () -> Unit) {
     }
 }
 
-
+// gonna meke it better 
 // Remembered anything? 😜

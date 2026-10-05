@@ -12,26 +12,58 @@ import android.telecom.CallAudioState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+// Snapshot of one top-level call.
+
+data class CallInfo(
+    val call: Call,
+    val state: Int,
+    val number: String,
+    val isConference: Boolean,
+    val children: List<CallInfo>,
+    val canMerge: Boolean,
+    val canSwapConference: Boolean,
+    val canSplit: Boolean,
+    val canDisconnectFromConference: Boolean,
+    val videoState: Int,
+    val connectedAtElapsed: Long?
+)
+
+fun pickPrimary(list: List<CallInfo>): CallInfo? =
+    list.firstOrNull {
+        it.state == Call.STATE_ACTIVE || it.state == Call.STATE_DIALING ||
+            it.state == Call.STATE_CONNECTING || it.state == Call.STATE_PULLING_CALL
+    } ?: list.firstOrNull { it.state == Call.STATE_RINGING }
+        ?: list.firstOrNull { it.state == Call.STATE_HOLDING }
+        ?: list.firstOrNull()
+
 // object reference. 
 object CallStateHolder {
+    private val _calls = MutableStateFlow<List<CallInfo>>(emptyList())
+    val calls: StateFlow<List<CallInfo>> = _calls
+
+    // The call the UI treats as "the" call (bubble, receiver fallback) -- always the primary of calls.
     private val _activeCall = MutableStateFlow<Call?>(null)
     val activeCall: StateFlow<Call?> = _activeCall
 
     private val _audioState = MutableStateFlow<CallAudioState?>(null)
     val audioState: StateFlow<CallAudioState?> = _audioState
 
-    // background - managed by different service. 
+    // background - managed by different service. (default - black, else the picture user has set ✌️)
+    
     private val _activeBackground = MutableStateFlow<BackgroundItem?>(null)
     val activeBackground: StateFlow<BackgroundItem?> = _activeBackground
 
-    // set by TurboCallScreeningService (picked early so it can also decide whether to
-    // silence the ringer), consumed once by TurboInCallService so both agree on the
-    // same item instead of each rolling their own random pick.
+    // in call background...
     private var pendingBackground: BackgroundItem? = null
 
-    fun setCall(call: Call?) {
-        _activeCall.value = call
-        if (call == null) _activeBackground.value = null
+    // Screening silenced the system ringer because IncomingRinger will ring instead.
+    @Volatile
+    var customRingerArmed = false
+
+    fun setCalls(list: List<CallInfo>) {
+        _calls.value = list
+        _activeCall.value = pickPrimary(list)?.call
+        if (list.isEmpty()) _activeBackground.value = null
     }
 
     fun setAudioState(state: CallAudioState?) {

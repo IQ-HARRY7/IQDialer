@@ -12,7 +12,6 @@ package com.iqstudio.dialer
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.telecom.VideoProfile
 import androidx.core.app.NotificationManagerCompat
 
 const val ACTION_ANSWER_CALL = "com.iqstudio.dialer.ACTION_ANSWER_CALL"
@@ -20,9 +19,10 @@ const val ACTION_DECLINE_CALL = "com.iqstudio.dialer.ACTION_DECLINE_CALL"
 
 class CallActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val call = CallStateHolder.activeCall.value
+        val call = CallStateHolder.calls.value.firstOrNull { it.state == android.telecom.Call.STATE_RINGING }?.call
+            ?: CallStateHolder.activeCall.value
         when (intent.action) {
-            ACTION_ANSWER_CALL -> call?.answer(VideoProfile.STATE_AUDIO_ONLY)
+            ACTION_ANSWER_CALL -> call?.let { it.answer(it.details.videoState) }
             ACTION_DECLINE_CALL -> call?.reject(false, null)
         }
         NotificationManagerCompat.from(context).cancel(INCOMING_CALL_NOTIFICATION_ID)

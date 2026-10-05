@@ -31,9 +31,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.PhoneDisabled
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.NotificationsPaused
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,6 +57,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -52,11 +67,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// See RecentsScreen.kt for the same pattern -- NestedPane and
-// nestedPaneTransitionSpec (UiComponents.kt) are shared so every
-// nested-screen switch in the app reads as one consistent push/pop system.
+// See RecentsScreen.kt for the same pattern
 private sealed interface AdvancedPane : NestedPane {
     object Main : AdvancedPane { override val paneDepth = 0 }
+    object QuickResponses : AdvancedPane { override val paneDepth = 1 }
     data class Editing(val item: BackgroundItem) : AdvancedPane { override val paneDepth = 1 }
 }
 
@@ -66,14 +80,22 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var backgrounds by remember { mutableStateOf(AppPrefs.backgrounds(context)) }
     var editingItem by remember { mutableStateOf<BackgroundItem?>(null) }
+    var showQuickResponses by remember { mutableStateOf(false) }
     var dialpadSound by remember { mutableStateOf(AppPrefs.dialpadSoundEnabled(context)) }
     var redialAuto by remember { mutableStateOf(AppPrefs.redialAutomatically(context)) }
     var missedCallReminder by remember { mutableStateOf(AppPrefs.missedCallReminder(context)) }
     var vibrateOnAnswer by remember { mutableStateOf(AppPrefs.vibrateOnAnswer(context)) }
     var callWaitingNotification by remember { mutableStateOf(AppPrefs.callWaitingNotification(context)) }
     var quickResponses by remember { mutableStateOf(AppPrefs.quickResponsesEnabled(context)) }
+    var dtmfToneLength by remember { mutableStateOf(AppPrefs.dtmfToneLength(context)) }
+    var recordingCount by remember { mutableIntStateOf(CallRecordingManager.recordings(context).size) }
+    var showExportWarning by remember { mutableStateOf(false) }
 
-    val pane: AdvancedPane = editingItem?.let { AdvancedPane.Editing(it) } ?: AdvancedPane.Main
+    val pane: AdvancedPane = when {
+        editingItem != null -> AdvancedPane.Editing(editingItem!!)
+        showQuickResponses -> AdvancedPane.QuickResponses
+        else -> AdvancedPane.Main
+    }
 
     AnimatedContent(
         targetState = pane,
@@ -90,14 +112,18 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                 },
                 onCancel = { editingItem = null }
             )
+            AdvancedPane.QuickResponses -> QuickResponsesScreen(
+                enabled = quickResponses,
+                onEnabledChange = {
+                    quickResponses = it
+                    AppPrefs.setQuickResponsesEnabled(context, it)
+                },
+                onBack = { showQuickResponses = false }
+            )
             AdvancedPane.Main -> {
                 BackHandler(onBack = onBack)
 
-                val switchColors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = GlassTint,
-                    checkedBorderColor = GlassTint
-                )
+                val switchColors = glassSwitchColors()
 
                 val pickMedia = rememberLauncherForActivityResult(
                     ActivityResultContracts.PickMultipleVisualMedia(20)
@@ -133,7 +159,7 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                             RingtoneManager.setActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE, uri)
                         }
                     } catch (e: Exception) {
-                        // No WRITE_SETTINGS access -- the choice is still saved above - UX app would misbehave without this. -@IQ_HARRY_07
+                        // No WRITE_SETTINGS access -- the choice is still saved above - UX would misbehave without this. -@IQ_HARRY_07
                     }
                 }
 
@@ -211,18 +237,13 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Stock-dialer style "Dialer" / "Answering and Calls" / "Other"
-                        // groups James asked for -- basic scaffolding for now: the
-                        // toggles and pickers here save a preference, but none of them
-                        // are wired to real telephony behavior yet (that's follow-up
-                        // work, one feature at a time). "Caller ID" isn't included --
-                        // its rows weren't visible in the reference screenshot.
                         GlassCard {
                             Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
-                                Text("Dialer", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+                                Text("Dialer", fontSize = 13.sp, color = AccentSoft, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
                             }
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = { IconChip(Icons.Filled.Dialpad, AccentIndigo) },
                                 headlineContent = { Text("Dial pad touch tones", color = TextPrimary) },
                                 supportingContent = { Text("Play a tone when you tap a dialpad key", color = TextSecondary) },
                                 trailingContent = {
@@ -239,12 +260,14 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                             HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = { IconChip(Icons.Filled.Speed, AccentAmber) },
                                 headlineContent = { Text("Quick dial", color = TextPrimary) },
                                 supportingContent = { Text("Assign contacts to number keys -- coming soon", color = TextSecondary) }
                             )
                             HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = { IconChip(Icons.Filled.Replay, AccentTeal) },
                                 headlineContent = { Text("Redial automatically", color = TextPrimary) },
                                 supportingContent = { Text("Redial automatically if the line is busy", color = TextSecondary) },
                                 trailingContent = {
@@ -264,13 +287,15 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
 
                         GlassCard {
                             Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
-                                Text("Answering and Calls", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+                                Text("Answering and Calls", fontSize = 13.sp, color = AccentSoft, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
                             }
                             PickerRow(
                                 title = "Missed call reminders",
+                                icon = Icons.Filled.NotificationsActive,
+                                accent = AccentAmber,
                                 subtitle = "Reminders are separated by 5 minute intervals",
                                 value = missedCallReminder,
-                                options = listOf("No reminder", "Once", "Every 5 minutes"),
+                                options = listOf("No reminder", "1 time", "2 times", "3 times", "5 times", "10 times"),
                                 onSelect = {
                                     missedCallReminder = it
                                     AppPrefs.setMissedCallReminder(context, it)
@@ -279,8 +304,10 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                             HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
                             PickerRow(
                                 title = "Vibrate when your call is answered",
+                                icon = Icons.Filled.Vibration,
+                                accent = AccentPink,
                                 value = vibrateOnAnswer,
-                                options = listOf("Off", "Normal"),
+                                options = listOf("Normal", "Light", "None"),
                                 onSelect = {
                                     vibrateOnAnswer = it
                                     AppPrefs.setVibrateOnAnswer(context, it)
@@ -289,8 +316,14 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                             HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
                             PickerRow(
                                 title = "Call waiting notification",
+                                icon = Icons.Filled.NotificationsPaused,
+                                accent = AccentTeal,
                                 value = callWaitingNotification,
-                                options = listOf("Play notification sound once", "Play notification sound continuously"),
+                                options = listOf(
+                                    "Play notification sound continuously",
+                                    "Play notification sound twice",
+                                    "Play notification sound and vibrate twice"
+                                ),
                                 onSelect = {
                                     callWaitingNotification = it
                                     AppPrefs.setCallWaitingNotification(context, it)
@@ -299,18 +332,11 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                             HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                modifier = Modifier.clickable { showQuickResponses = true },
+                                leadingContent = { IconChip(Icons.AutoMirrored.Filled.Message, AccentIndigo) },
                                 headlineContent = { Text("Quick responses", color = TextPrimary) },
                                 supportingContent = { Text("Preset texts for declining a call with a message", color = TextSecondary) },
-                                trailingContent = {
-                                    Switch(
-                                        checked = quickResponses,
-                                        onCheckedChange = {
-                                            quickResponses = it
-                                            AppPrefs.setQuickResponsesEnabled(context, it)
-                                        },
-                                        colors = switchColors
-                                    )
-                                }
+                                trailingContent = { Text(if (quickResponses) "On" else "Off", color = TextSecondary, fontSize = 13.sp) }
                             )
                         }
 
@@ -318,16 +344,98 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
 
                         GlassCard {
                             Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
-                                Text("Other", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+                                Text("Other", fontSize = 13.sp, color = AccentSoft, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
                             }
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = { IconChip(Icons.Filled.PhoneDisabled, CallRed) },
                                 headlineContent = { Text("Call barring", color = TextPrimary) },
                                 supportingContent = { Text("Voice call barring settings -- coming soon", color = TextSecondary) }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = { IconChip(Icons.Filled.Badge, AccentViolet) },
+                                headlineContent = { Text("Caller ID", color = TextPrimary) },
+                                supportingContent = { Text("Hide my number for outgoing calls (confirm that your carrier supports this feature) -- coming soon", color = TextSecondary) }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = { IconChip(Icons.Filled.Lock, AccentOrange) },
+                                headlineContent = { Text("Fixed dialing numbers", color = TextPrimary) },
+                                supportingContent = { Text("Restrict outgoing calls to listed FDNs or to numbers with certain prefixes -- coming soon", color = TextSecondary) }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            PickerRow(
+                                title = "DTMF tones",
+                                icon = Icons.Filled.GraphicEq,
+                                accent = AccentViolet,
+                                subtitle = "Set the length of DTMF tones",
+                                value = dtmfToneLength,
+                                options = listOf("Normal", "Long"),
+                                onSelect = {
+                                    dtmfToneLength = it
+                                    AppPrefs.setDtmfToneLength(context, it)
+                                }
+                            )
+                            HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                modifier = Modifier.clickable {
+                                    recordingCount = CallRecordingManager.recordings(context).size
+                                    if (recordingCount == 0) {
+                                        android.widget.Toast.makeText(context, "No recordings yet", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        showExportWarning = true
+                                    }
+                                },
+                                leadingContent = { IconChip(Icons.Filled.Mic, AccentPink) },
+                                headlineContent = { Text("Call recordings", color = TextPrimary) },
+                                supportingContent = {
+                                    Text(
+                                        "Kept private inside the app. Tap to copy them to internal storage.",
+                                        color = TextSecondary
+                                    )
+                                },
+                                trailingContent = { Text(recordingCount.toString(), color = TextSecondary, fontSize = 13.sp) }
                             )
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
+
+                        if (showExportWarning) {
+                            AlertDialog(
+                                onDismissRequest = { showExportWarning = false },
+                                containerColor = SurfaceCard,
+                                title = { Text("Copy recordings out of the app?", color = TextPrimary) },
+                                text = {
+                                    Text(
+                                        "Recordings are stored in the app's private storage, so no other app or file manager can open them. " +
+                                            "Copying puts normal, unprotected files in Recordings/IQDialer that any app with storage access can read. " +
+                                            "Recording a call without the other person's consent is illegal in many places. " +
+                                            "Only continue if you understand this.",
+                                        color = TextSecondary
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showExportWarning = false
+                                        scope.launch {
+                                            val copied = withContext(Dispatchers.IO) { CallRecordingManager.exportToStorage(context) }
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Copied " + copied + " of " + recordingCount + " recordings",
+                                                android.widget.Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }) { Text("I understand, copy", color = CallRed) }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showExportWarning = false }) { Text("Cancel", color = TextPrimary) }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -335,28 +443,114 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
     }
 }
 
-// Value + tap-to-pick-from-a-short-list row, shared by the three "Answering
-// and Calls" pickers above. Nothing fancier than a DropdownMenu -- these
-// aren't wired to real behavior yet, so a bigger picker UI isn't earned yet.
+// Value + tap-to-pick-from-a-short-list row, shared by the pickers above.
 @Composable
-private fun PickerRow(title: String, subtitle: String? = null, value: String, options: List<String>, onSelect: (String) -> Unit) {
+private fun PickerRow(title: String, subtitle: String? = null, value: String, options: List<String>, icon: ImageVector? = null, accent: Color = AccentIndigo, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    // Long values would squeeze the title into a one-letter-wide column, so they go under it instead.
+    val longValue = value.length > 18
+    val supporting: (@Composable () -> Unit)? = when {
+        longValue -> ({
+            Column {
+                if (subtitle != null) Text(subtitle, color = TextSecondary)
+                Text(value, color = AccentSoft, fontSize = 13.sp)
+            }
+        })
+        subtitle != null -> ({ Text(subtitle, color = TextSecondary) })
+        else -> null
+    }
     ListItem(
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.clickable { expanded = true },
+        leadingContent = icon?.let { { IconChip(it, accent) } },
         headlineContent = { Text(title, color = TextPrimary) },
-        supportingContent = subtitle?.let { { Text(it, color = TextSecondary) } },
+        supportingContent = supporting,
         trailingContent = {
             Box {
-                Text(value, color = TextSecondary, fontSize = 13.sp)
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                if (longValue) {
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = TextSecondary)
+                } else {
+                    Text(value, color = TextSecondary, fontSize = 13.sp)
+                }
+                GlassDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     options.forEach { option ->
-                        DropdownMenuItem(text = { Text(option) }, onClick = { onSelect(option); expanded = false })
+                        GlassDropdownMenuItem(text = option, selected = option == value, onClick = { onSelect(option); expanded = false })
                     }
                 }
             }
         }
     )
+}
+
+// read
+@Composable
+private fun QuickResponsesScreen(enabled: Boolean, onEnabledChange: (Boolean) -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    BackHandler(onBack = onBack)
+
+    val switchColors = glassSwitchColors()
+    val messages = remember { mutableStateListOf(*AppPrefs.quickResponses(context).toTypedArray()) }
+
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GlassIconButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Quick responses", fontSize = 20.sp, color = TextPrimary)
+        }
+
+        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            GlassCard {
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = { IconChip(Icons.AutoMirrored.Filled.Message, AccentIndigo) },
+                                headlineContent = { Text("Quick responses", color = TextPrimary) },
+                    supportingContent = { Text("Show buttons for ending call and sending SMS", color = TextSecondary) },
+                    trailingContent = {
+                        Switch(checked = enabled, onCheckedChange = onEnabledChange, colors = switchColors)
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Quick responses", fontSize = 13.sp, color = AccentSoft, modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
+
+            GlassCard {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    messages.forEachIndexed { index, message ->
+                        OutlinedTextField(
+                            value = message,
+                            onValueChange = { edited ->
+                                messages[index] = edited
+                                AppPrefs.setQuickResponse(context, index, edited)
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(color = TextPrimary)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .pressScale(onClick = {
+                        AppPrefs.restoreQuickResponseDefaults(context)
+                        val restored = AppPrefs.quickResponses(context)
+                        messages.clear()
+                        messages.addAll(restored)
+                    }),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.Undo, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Restore defaults", color = TextSecondary, fontSize = 13.sp)
+            }
+        }
+    }
 }
 
 @Composable
@@ -400,7 +594,7 @@ private fun BackgroundRow(
                     Switch(
                         checked = item.muted,
                         onCheckedChange = onToggleMute,
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GlassTint),
+                        colors = glassSwitchColors(),
                         modifier = Modifier.scale(0.7f)
                     )
                 }
@@ -505,49 +699,7 @@ private fun BackgroundFitEditor(
 }
 
 
-/*
- ✨✨✨✨✨✨✨✨✨✨, NINJA TECHNIQUE TO GET ATTENTION - still in development, already implemented, need further improvements.
 
-
-private fun snapToEdge(view: View, layoutParams: WindowManager.LayoutParams) {
-        val screenWidth = resources.displayMetrics.widthPixels
-        val bubbleWidth = view.width.takeIf { it > 0 } ?: dp(140)
-        val targetX = if (layoutParams.x + bubbleWidth / 2 < screenWidth / 2) dp(16) else screenWidth - bubbleWidth - dp(16)
-
-        val startX = layoutParams.x
-        val animator = android.animation.ValueAnimator.ofInt(startX, targetX)
-        animator.duration = 220
-        animator.interpolator = android.view.animation.DecelerateInterpolator()
-        animator.addUpdateListener { anim ->
-            layoutParams.x = anim.animatedValue as Int
-            windowManager.updateViewLayout(view, layoutParams)
-        }
-        animator.start()
-    }
-
-    private fun openFullCallScreen() {
-        val intent = Intent(this, InCallActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
-        stopSelf()
-    }
-
-    override fun onDestroy() {
-        registeredCall?.unregisterCallback(callCallback)
-        stopRingtoneAudio()
-        bubbleView?.let {
-            try {
-                windowManager.removeView(it)
-            } catch (e: Exception) {
-                // view already gone -- fine
-            }
-        }
-        bubbleView = null
-        super.onDestroy()
-    }
-}
-
-*/
 
 private suspend fun loadThumbnail(context: Context, item: BackgroundItem): Bitmap? = withContext(Dispatchers.IO) {
     if (item.isVideo) {
@@ -581,33 +733,6 @@ private fun probeHasAudio(context: Context, uri: Uri): Boolean {
     }
 }
 
-/*. TEMPORARILY DISABLED --> 
-
-
-un lookupContactName(context: Context, number: String): String? {
-    if (!hasContactsPermission(context)) return null
-    val lookupUri = Uri.withAppendedPath(
-        ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-        Uri.encode(number)
-    )
-    return try {
-        context.contentResolver.query(
-            lookupUri,
-            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
-            null, null, null
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val idx = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
-                if (idx >= 0) cursor.getString(idx) else null
-            } else {
-                null
-            }
-        }
-    } catch (e: Exception) {
-        null
-    }
-
-*/
 
 
 // HOPE IS BEAUTIFUL ❤️

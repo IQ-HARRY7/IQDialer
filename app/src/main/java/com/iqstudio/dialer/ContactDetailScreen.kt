@@ -32,6 +32,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.MoreVert
@@ -100,16 +110,7 @@ private fun loadHistoryForNumber(context: Context, number: String): List<CallLog
     return entries
 }
 
-private fun addToContacts(context: Context, number: String) {
-    val intent = Intent(Intent.ACTION_INSERT, ContactsContract.Contacts.CONTENT_URI)
-    intent.putExtra(ContactsContract.Intents.Insert.PHONE, number)
-    context.startActivity(intent)
-}
-
-// ACTION_DIAL, not ACTION_CALL -- the shortcut intent fires from the
-// launcher's process, which doesn't hold CALL_PHONE. DIAL just opens our
-// own MainActivity pre-filled (it already has the intent-filter for this),
-// one more tap to actually call, no cross-app permission problem.
+// ACTION_DIAL, not ACTION_CALL - the shortcut intent fires from the launcher's process, which doesn't hold CALL_PHONE.
 private fun pinToHomeScreen(context: Context, name: String, number: String) {
     val shortcutManager = context.getSystemService(ShortcutManager::class.java) ?: return
     if (!shortcutManager.isRequestPinShortcutSupported) return
@@ -122,8 +123,8 @@ private fun pinToHomeScreen(context: Context, name: String, number: String) {
     shortcutManager.requestPinShortcut(shortcut, null)
 }
 
-// System already shows its own "Copied" confirmation from API 33 on -- ours
-// would just be a second, redundant one.
+// System already shows its own "Copied" confirmation from API 33 on
+
 private fun copyNumber(context: Context, number: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("Phone number", number))
@@ -166,13 +167,14 @@ private fun unblockNumber(context: Context, number: String) {
     )
 }
 
-// See RecentsScreen.kt for the same pattern -- NestedPane and
-// nestedPaneTransitionSpec (UiComponents.kt) are shared so every
-// nested-screen switch in the app reads as one consistent push/pop system.
+// See RecentsScreen.kt for the same pattern & nestedPaneTransitionSpec (UiComponents.kt) are shared so every nested-screen switch in the app reads as one consistent push/pop system.
+// Lazy 🦥 
+
 private sealed interface ContactDetailPane : NestedPane {
     object Main : ContactDetailPane { override val paneDepth = 0 }
     object FullHistory : ContactDetailPane { override val paneDepth = 1 }
     data class Edit(val contactId: Long) : ContactDetailPane { override val paneDepth = 1 }
+    object Create : ContactDetailPane { override val paneDepth = 1 }
 }
 
 @Composable
@@ -181,9 +183,11 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
     var lookup by remember { mutableStateOf(ContactLookupResult(null, null)) }
     var history by remember { mutableStateOf<List<CallLogEntry>>(emptyList()) }
     var menuExpanded by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var isBlocked by remember { mutableStateOf(false) }
     var showFullHistory by remember { mutableStateOf(false) }
     var editingContactId by remember { mutableStateOf<Long?>(null) }
+    var creatingContact by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableStateOf(0) }
     val formatter = java.text.SimpleDateFormat("MMM d, " + AppPrefs.timePattern(context), java.util.Locale.getDefault())
 
@@ -193,8 +197,28 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
         isBlocked = withContext(Dispatchers.IO) { BlockedNumberContract.isBlocked(context, phoneNumber) }
     }
 
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            containerColor = SurfaceCard,
+            title = { Text("Delete contact?", color = TextPrimary) },
+            text = { Text("This removes " + (lookup.name ?: phoneNumber) + " from your contacts.", color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    lookup.contactId?.let { deleteContact(context, it) }
+                    onBack()
+                }) { Text("Delete", color = CallRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancel", color = TextPrimary) }
+            }
+        )
+    }
+
     val pane: ContactDetailPane = when {
         editingContactId != null -> ContactDetailPane.Edit(editingContactId!!)
+        creatingContact -> ContactDetailPane.Create
         showFullHistory -> ContactDetailPane.FullHistory
         else -> ContactDetailPane.Main
     }
@@ -210,6 +234,12 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
                 contactId = currentPane.contactId,
                 onBack = { editingContactId = null },
                 onSaved = { editingContactId = null; refreshKey++ }
+            )
+            ContactDetailPane.Create -> EditContactScreen(
+                contactId = null,
+                prefillNumber = phoneNumber,
+                onBack = { creatingContact = false },
+                onSaved = { creatingContact = false; refreshKey++ }
             )
             ContactDetailPane.Main -> {
                 BackHandler(onBack = onBack)
@@ -238,100 +268,102 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
                                 icon = Icons.Filled.MoreVert,
                                 contentDescription = "More options",
                                 onClick = { menuExpanded = true }
-                )
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Copy number") },
-                        onClick = {
-                            menuExpanded = false
-                            copyNumber(context, phoneNumber)
-                        }
-                    )
-                    if (lookup.contactId == null) {
-                        DropdownMenuItem(
-                            text = { Text("Add to contacts") },
-                            onClick = {
-                                menuExpanded = false
-                                addToContacts(context, phoneNumber)
-                            }
-                        )
-                    } else {
-                        DropdownMenuItem(
-                            text = { Text("Edit contact") },
-                            onClick = {
-                                menuExpanded = false
-                                lookup.contactId?.let { editingContactId = it }
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Set ringtone") },
-                            onClick = {
-                                menuExpanded = false
-                                val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                                    putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-                                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                            )
+                            GlassDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                                GlassDropdownMenuItem(
+                                    text = "Copy number",
+                                    icon = Icons.Filled.ContentCopy,
+                                    accent = AccentTeal,
+                                    onClick = {
+                                        menuExpanded = false
+                                        copyNumber(context, phoneNumber)
+                                    }
+                                )
+                                if (lookup.contactId == null) {
+                                    GlassDropdownMenuItem(
+                                        text = "Add to contacts",
+                                        icon = Icons.Filled.PersonAdd,
+                                        accent = AccentIndigo,
+                                        onClick = {
+                                            menuExpanded = false
+                                            creatingContact = true
+                                        }
+                                    )
+                                } else {
+                                    GlassDropdownMenuItem(
+                                        text = "Edit contact",
+                                        icon = Icons.Filled.Edit,
+                                        accent = AccentAmber,
+                                        onClick = {
+                                            menuExpanded = false
+                                            lookup.contactId?.let { editingContactId = it }
+                                        }
+                                    )
+                                    GlassDropdownMenuItem(
+                                        text = "Set ringtone",
+                                        icon = Icons.Filled.MusicNote,
+                                        accent = AccentPink,
+                                        onClick = {
+                                            menuExpanded = false
+                                            val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                                                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
+                                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                                            }
+                                            ringtonePickerLauncher.launch(intent)
+                                        }
+                                    )
+                                    GlassDropdownMenuItem(
+                                        text = "Share",
+                                        icon = Icons.Filled.Share,
+                                        accent = AccentViolet,
+                                        onClick = {
+                                            menuExpanded = false
+                                            shareNumber(context, lookup.name, phoneNumber)
+                                        }
+                                    )
+                                    GlassDropdownMenuItem(
+                                        text = "Place on Home screen",
+                                        icon = Icons.Filled.Home,
+                                        accent = AccentOrange,
+                                        onClick = {
+                                            menuExpanded = false
+                                            pinToHomeScreen(context, lookup.name ?: phoneNumber, phoneNumber)
+                                        }
+                                    )
+                                    GlassDropdownMenuItem(
+                                        text = "Delete contact",
+                                        icon = Icons.Filled.Delete,
+                                        accent = CallRed,
+                                        onClick = {
+                                            menuExpanded = false
+                                            confirmDelete = true
+                                        }
+                                    )
                                 }
-                                ringtonePickerLauncher.launch(intent)
+                                GlassDropdownMenuItem(
+                                    text = if (isBlocked) "Unblock" else "Block",
+                                    icon = Icons.Filled.Block,
+                                    accent = CallRed,
+                                    onClick = {
+                                        menuExpanded = false
+                                        if (isBlocked) {
+                                            unblockNumber(context, phoneNumber)
+                                        } else {
+                                            blockNumber(context, phoneNumber)
+                                        }
+                                        isBlocked = !isBlocked
+                                    }
+                                )
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Share") },
-                            onClick = {
-                                menuExpanded = false
-                                shareNumber(context, lookup.name, phoneNumber)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Place on Home screen") },
-                            onClick = {
-                                menuExpanded = false
-                                pinToHomeScreen(context, lookup.name ?: phoneNumber, phoneNumber)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete contact") },
-                            onClick = {
-                                menuExpanded = false
-                                lookup.contactId?.let { deleteContact(context, it) }
-                                onBack()
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text(if (isBlocked) "Unblock" else "Block") },
-                        onClick = {
-                            menuExpanded = false
-                            if (isBlocked) {
-                                unblockNumber(context, phoneNumber)
-                            } else {
-                                blockNumber(context, phoneNumber)
-                            }
-                            isBlocked = !isBlocked
                         }
-                    )
-                }
-            }
-        }
+                    }
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(88.dp)
-                    .clip(CircleShape)
-                    .background(SurfaceCardHigh),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.Person,
-                    contentDescription = null,
-                    tint = TextSecondary,
-                    modifier = Modifier.size(48.dp)
-                )
-            }
+            ContactAvatar(name = lookup.name, size = 88.dp)
             Spacer(modifier = Modifier.height(12.dp))
             Text(lookup.name ?: "Unknown contact", fontSize = 24.sp, color = TextPrimary)
         }
@@ -345,12 +377,14 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        phoneNumber,
-                        fontSize = 16.sp,
-                        color = TextPrimary,
-                        modifier = Modifier.clickable { copyNumber(context, phoneNumber) }
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f).clickable { copyNumber(context, phoneNumber) }
+                    ) {
+                        IconChip(Icons.Filled.Phone, AccentTeal)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(phoneNumber, fontSize = 16.sp, color = TextPrimary)
+                    }
                     Row {
                         GlassIconButton(
                             icon = Icons.Filled.Videocam,
@@ -377,7 +411,11 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Call history", fontSize = 14.sp, color = TextSecondary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconChip(Icons.Filled.History, AccentAmber, size = 30.dp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Call history", fontSize = 14.sp, color = TextSecondary)
+                    }
                     if (history.isNotEmpty()) {
                         Text(
                             "See all",
@@ -389,20 +427,28 @@ fun ContactDetailScreen(phoneNumber: String, onBack: () -> Unit) {
                 }
                 if (history.isEmpty()) {
                     Text(
-                        "No calls with this number yet",
+                        "No calls with this number yet", // Not her ofc 😆🥀 
                         color = TextSecondary,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
                     )
                 } else {
                     history.take(5).forEach { entry ->
                         val missed = entry.type == CallLog.Calls.MISSED_TYPE || entry.type == CallLog.Calls.REJECTED_TYPE
-                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
-                            Text(
-                                formatter.format(java.util.Date(entry.date)),
-                                fontSize = 15.sp,
-                                color = if (missed) CallRed else TextPrimary
-                            )
-                            Text(describeCallHistory(entry), fontSize = 12.sp, color = TextSecondary)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val (typeIcon, typeAccent) = callTypeVisual(entry.type)
+                            IconChip(typeIcon, typeAccent, size = 32.dp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    formatter.format(java.util.Date(entry.date)),
+                                    fontSize = 15.sp,
+                                    color = if (missed) CallRed else TextPrimary
+                                )
+                                Text(describeCallHistory(entry), fontSize = 12.sp, color = TextSecondary)
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))

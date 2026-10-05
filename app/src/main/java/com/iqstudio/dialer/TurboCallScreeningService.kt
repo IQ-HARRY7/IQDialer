@@ -27,14 +27,17 @@ class TurboCallScreeningService : CallScreeningService() {
             val blocked = number != null && BlockedNumberContract.isBlocked(this, number)
 
             // Rolled here, once, and handed off via CallStateHolder so TurboInCallService
-            // shows the exact same item instead of re-rolling a different one later.
             var silenceRinger = false
+            CallStateHolder.customRingerArmed = false
             if (!blocked) {
                 val chosen = AppPrefs.randomBackground(this)
                 CallStateHolder.setPendingBackground(chosen)
-                // Only an unmuted, sound-bearing video has its own audio competing with
-                // the system ringtone -- that's the only case worth silencing for.
-                silenceRinger = chosen != null && chosen.isVideo && chosen.hasSound && !chosen.muted
+                
+                val videoSound = chosen != null && chosen.isVideo && chosen.hasSound && !chosen.muted
+                
+                val custom = !videoSound && IncomingRinger.shouldArm(this, number)
+                CallStateHolder.customRingerArmed = custom
+                silenceRinger = videoSound || custom
             }
 
             val response = CallResponse.Builder()

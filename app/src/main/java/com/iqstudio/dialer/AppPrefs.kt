@@ -21,6 +21,19 @@ private const val KEY_MISSED_CALL_REMINDER = "missed_call_reminder"
 private const val KEY_VIBRATE_ON_ANSWER = "vibrate_on_answer"
 private const val KEY_CALL_WAITING_NOTIFICATION = "call_waiting_notification"
 private const val KEY_QUICK_RESPONSES = "quick_responses_enabled"
+private const val KEY_QUICK_RESPONSE_1 = "quick_response_1"
+private const val KEY_QUICK_RESPONSE_2 = "quick_response_2"
+private const val KEY_QUICK_RESPONSE_3 = "quick_response_3"
+private const val KEY_QUICK_RESPONSE_4 = "quick_response_4"
+private const val KEY_DTMF_TONE_LENGTH = "dtmf_tone_length"
+private const val KEY_FLIP_SILENCE = "flip_to_silence"
+private const val KEY_QUIET_LIFT = "quiet_ringer_lifted"
+private const val KEY_INCREASING_RING = "increasing_ringtone"
+private const val KEY_FLASH_RING = "flash_when_ringing"
+private const val KEY_PROXIMITY = "proximity_sensor"
+private const val KEY_MUTE_FIRST_RING = "mute_first_ring"
+private const val KEY_FLAGGED = "flagged_numbers"
+private const val KEY_CALL_NOTES = "call_notes"
 
 // NoEscape logic. 
 private const val FIELD_SEP = "\u001F"
@@ -50,7 +63,7 @@ object AppPrefs {
     // Used everywhere a call time gets formatted, so the whole app agrees.
     fun timePattern(context: Context): String = if (is24Hour(context)) "HH:mm" else "h:mm a"
 
-    // Call-screen backgrounds: a pool of photos/videos, one picked at random - it's random & this is how it's planned. you can modify for selecting etc. 
+    // Call-screen backgrounds: a pool of photos/videos - fet
     fun backgrounds(context: Context): List<BackgroundItem> {
         val raw = prefs(context).getString(KEY_BACKGROUNDS, null)
         if (raw.isNullOrBlank()) return emptyList()
@@ -115,10 +128,7 @@ object AppPrefs {
         prefs(context).edit().putBoolean(KEY_DIALPAD_SOUND, value).apply()
     }
 
-    // Advanced settings additions below -- basic scaffolding per James's
-    // request. These store the choice; none of them are wired to real
-    // telephony behavior yet (auto-redial, reminders, vibration pattern,
-    // call-waiting sound) -- that's follow-up work.
+    // Advanced settings additions below
     fun redialAutomatically(context: Context): Boolean =
         prefs(context).getBoolean(KEY_REDIAL_AUTO, false)
 
@@ -153,6 +163,85 @@ object AppPrefs {
 
     fun setQuickResponsesEnabled(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_QUICK_RESPONSES, value).apply()
+    }
+
+    // Stock default four -- also what "Restore defaults" resets to.
+    private val QUICK_RESPONSE_DEFAULTS = listOf(
+        "Can't talk now. Call me later?",
+        "I'll call you right back.",
+        "I'll call you later.",
+        "Can't talk now. What's up?"
+    )
+    private val QUICK_RESPONSE_KEYS = listOf(KEY_QUICK_RESPONSE_1, KEY_QUICK_RESPONSE_2, KEY_QUICK_RESPONSE_3, KEY_QUICK_RESPONSE_4)
+
+    fun quickResponses(context: Context): List<String> =
+        QUICK_RESPONSE_KEYS.mapIndexed { i, key -> prefs(context).getString(key, QUICK_RESPONSE_DEFAULTS[i]) ?: QUICK_RESPONSE_DEFAULTS[i] }
+
+    fun setQuickResponse(context: Context, index: Int, value: String) {
+        prefs(context).edit().putString(QUICK_RESPONSE_KEYS[index], value).apply()
+    }
+
+    fun restoreQuickResponseDefaults(context: Context) {
+        val editor = prefs(context).edit()
+        QUICK_RESPONSE_KEYS.forEachIndexed { i, key -> editor.putString(key, QUICK_RESPONSE_DEFAULTS[i]) }
+        editor.apply()
+    }
+
+    // Controls the DTMF tone duration in RecentsScreen's dialpad
+    fun dtmfToneLength(context: Context): String =
+        prefs(context).getString(KEY_DTMF_TONE_LENGTH, "Normal") ?: "Normal"
+
+    fun setDtmfToneLength(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_DTMF_TONE_LENGTH, value).apply()
+    }
+
+    fun flipToSilence(context: Context): Boolean = prefs(context).getBoolean(KEY_FLIP_SILENCE, false)
+    fun setFlipToSilence(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_FLIP_SILENCE, value).apply()
+
+    fun quietRingerWhenLifted(context: Context): Boolean = prefs(context).getBoolean(KEY_QUIET_LIFT, false)
+    fun setQuietRingerWhenLifted(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_QUIET_LIFT, value).apply()
+
+    fun increasingRingtone(context: Context): Boolean = prefs(context).getBoolean(KEY_INCREASING_RING, false)
+    fun setIncreasingRingtone(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_INCREASING_RING, value).apply()
+
+    fun flashWhenRinging(context: Context): Boolean = prefs(context).getBoolean(KEY_FLASH_RING, false)
+    fun setFlashWhenRinging(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_FLASH_RING, value).apply()
+
+    fun proximitySensor(context: Context): Boolean = prefs(context).getBoolean(KEY_PROXIMITY, true)
+    fun setProximitySensor(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_PROXIMITY, value).apply()
+
+    fun muteFirstRing(context: Context): Boolean = prefs(context).getBoolean(KEY_MUTE_FIRST_RING, false)
+    fun setMuteFirstRing(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_MUTE_FIRST_RING, value).apply()
+
+    fun flaggedNumbers(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_FLAGGED, emptySet()) ?: emptySet()
+
+    fun toggleFlag(context: Context, number: String): Boolean {
+        val updated = flaggedNumbers(context).toMutableSet()
+        val nowFlagged = updated.add(number)
+        if (!nowFlagged) updated.remove(number)
+        prefs(context).edit().putStringSet(KEY_FLAGGED, updated).apply()
+        return nowFlagged
+    }
+
+    // Notes taken during calls: one record per note, newest last - needs improvements.
+    fun callNotes(context: Context, number: String): List<Pair<Long, String>> {
+        val raw = prefs(context).getString(KEY_CALL_NOTES, null) ?: return emptyList()
+        return raw.split(ITEM_SEP).mapNotNull { entry ->
+            val parts = entry.split(FIELD_SEP)
+            if (parts.size != 3 || parts[0] != number) return@mapNotNull null
+            val time = parts[1].toLongOrNull() ?: return@mapNotNull null
+            time to parts[2]
+        }
+    }
+
+    fun addCallNote(context: Context, number: String, text: String) {
+        val clean = text.trim().replace(FIELD_SEP, " ").replace(ITEM_SEP, " ")
+        if (clean.isEmpty()) return
+        val existing = prefs(context).getString(KEY_CALL_NOTES, null)
+        val record = listOf(number, System.currentTimeMillis().toString(), clean).joinToString(FIELD_SEP)
+        val merged = if (existing.isNullOrEmpty()) record else existing + ITEM_SEP + record
+        prefs(context).edit().putString(KEY_CALL_NOTES, merged).apply()
     }
 }
 

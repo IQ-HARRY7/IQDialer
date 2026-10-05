@@ -12,6 +12,7 @@ package com.iqstudio.dialer
 
 import android.content.ContentProviderOperation
 import android.content.Context
+import android.widget.Toast
 import android.provider.ContactsContract
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -20,6 +21,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -54,9 +58,7 @@ private data class LoadedContact(
     val emails: List<EmailRow>
 )
 
-// Edits are written against a single raw contact -- the common case for a
-// phone-local contact. A contact merged across multiple accounts would need
-// per-raw-contact handling; not something this app's data model needs today.
+// Edits are written against a single raw contact
 private fun loadEditableContact(context: Context, contactId: Long): LoadedContact? {
     val resolver = context.contentResolver
 
@@ -224,6 +226,56 @@ private fun saveContact(
     }
 }
 
+private fun saveNewContact(
+    context: Context,
+    displayName: String,
+    phones: List<PhoneRow>,
+    emails: List<EmailRow>
+): Boolean {
+    val ops = ArrayList<ContentProviderOperation>()
+    ops.add(
+        ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+            .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+            .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
+            .build()
+    )
+    if (displayName.isNotBlank()) {
+        ops.add(
+            ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, displayName.trim())
+                .build()
+        )
+    }
+    phones.filter { it.number.isNotBlank() }.forEach { row ->
+        ops.add(
+            ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, row.number.trim())
+                .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, row.type)
+                .build()
+        )
+    }
+    emails.filter { it.address.isNotBlank() }.forEach { row ->
+        ops.add(
+            ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE)
+                .withValue(ContactsContract.CommonDataKinds.Email.ADDRESS, row.address.trim())
+                .withValue(ContactsContract.CommonDataKinds.Email.TYPE, row.type)
+                .build()
+        )
+    }
+    return try {
+        context.contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
+        true
+    } catch (e: Exception) {
+        false
+    }
+}
+
 private val PHONE_TYPES = listOf(
     ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE,
     ContactsContract.CommonDataKinds.Phone.TYPE_HOME,
@@ -247,10 +299,11 @@ private fun TypeDropdown(label: (Int) -> CharSequence, types: List<Int>, selecte
             fontSize = 13.sp,
             modifier = Modifier.clickable { expanded = true }
         )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        GlassDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             types.forEach { type ->
-                DropdownMenuItem(
-                    text = { Text(label(type).toString()) },
+                GlassDropdownMenuItem(
+                    text = label(type).toString(),
+                    selected = type == selected,
                     onClick = { onSelect(type); expanded = false }
                 )
             }
@@ -259,7 +312,7 @@ private fun TypeDropdown(label: (Int) -> CharSequence, types: List<Int>, selecte
 }
 
 @Composable
-fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) {
+fun EditContactScreen(contactId: Long?, onBack: () -> Unit, onSaved: () -> Unit, prefillNumber: String? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loaded by remember { mutableStateOf<LoadedContact?>(null) }
@@ -270,6 +323,12 @@ fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) 
     val deletedEmailIds = remember { mutableStateListOf<Long>() }
 
     LaunchedEffect(contactId) {
+        if (contactId == null) {
+            loaded = LoadedContact(-1L, null, "", emptyList(), emptyList())
+            phones.clear()
+            phones.add(PhoneRow(null, prefillNumber ?: "", ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE))
+            return@LaunchedEffect
+        }
         val result = withContext(Dispatchers.IO) { loadEditableContact(context, contactId) }
         if (result != null) {
             loaded = result
@@ -288,17 +347,23 @@ fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) 
             verticalAlignment = Alignment.CenterVertically
         ) {
             GlassIconButton(icon = Icons.Filled.Close, contentDescription = "Cancel", onClick = onBack)
-            Text("Edit contact", fontSize = 18.sp, color = TextPrimary)
+            Text(if (contactId == null) "New contact" else "Edit contact", fontSize = 18.sp, color = TextPrimary)
             GlassIconButton(
                 icon = Icons.Filled.Check,
                 contentDescription = "Save",
                 onClick = {
                     val current = loaded ?: return@GlassIconButton
+                    if (contactId == null && displayName.isBlank() && phones.none { it.number.isNotBlank() }) {
+                        Toast.makeText(context, "Add a name or a number first", Toast.LENGTH_SHORT).show()
+                        return@GlassIconButton
+                    }
                     scope.launch {
                         val saved = withContext(Dispatchers.IO) {
-                            saveContact(context, current, displayName, phones, emails, deletedPhoneIds, deletedEmailIds)
+                            if (contactId == null) saveNewContact(context, displayName, phones, emails)
+                            else saveContact(context, current, displayName, phones, emails, deletedPhoneIds, deletedEmailIds)
                         }
                         if (saved) onSaved()
+                        else Toast.makeText(context, "Couldn't save the contact", Toast.LENGTH_SHORT).show()
                     }
                 }
             )
@@ -318,12 +383,13 @@ fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) 
                 value = displayName,
                 onValueChange = { displayName = it },
                 label = { Text("Name") },
+                leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = AccentIndigo) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Phone", fontSize = 13.sp, color = TextSecondary)
+            Text("Phone", fontSize = 13.sp, color = AccentSoft)
             Spacer(modifier = Modifier.height(4.dp))
 
             phones.forEachIndexed { index, row ->
@@ -342,6 +408,7 @@ fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) 
                         OutlinedTextField(
                             value = row.number,
                             onValueChange = { row.number = it },
+                            leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null, tint = AccentTeal) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                             modifier = Modifier.weight(1f)
@@ -362,7 +429,7 @@ fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) 
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Email", fontSize = 13.sp, color = TextSecondary)
+            Text("Email", fontSize = 13.sp, color = AccentSoft)
             Spacer(modifier = Modifier.height(4.dp))
 
             emails.forEachIndexed { index, row ->
@@ -381,6 +448,7 @@ fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) 
                         OutlinedTextField(
                             value = row.address,
                             onValueChange = { row.address = it },
+                            leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null, tint = AccentPink) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                             modifier = Modifier.weight(1f)
@@ -406,3 +474,4 @@ fun EditContactScreen(contactId: Long, onBack: () -> Unit, onSaved: () -> Unit) 
 }
 
 // end. end doesn't always means end.
+// improved in UI/UX this time.

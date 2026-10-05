@@ -19,7 +19,9 @@
 # release build can still be traced back to a real line, even though class
 # and method names get obfuscated. Pairs with the mapping.txt AGP generates
 # automatically at app/build/outputs/mapping/release/ -- run an obfuscated
-# trace through that (via retrace) to get real names back too.-keepattributes SourceFile,LineNumberTable-renamesourcefileattribute SourceFile 
+# trace through that (via retrace) to get real names back too.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
 ## *** (yeah, yeah all those shits) 😒 i wonder why there's no Default method for this ~
 

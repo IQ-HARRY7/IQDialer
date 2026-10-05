@@ -226,13 +226,7 @@ class CallBubbleService : Service() {
             stopRingtoneAudio()
         }
     }
-
-    // The bubble has no video surface, so this is audio-only -- same idea as
-    // InCallActivity's VideoBackgroundPlayer (unmuted sound video replaces
-    // the ringtone), just here for whenever the user's in another app and
-    // only the bubble is up. TurboCallScreeningService already silenced the
-    // system ringtone for exactly this pick; this is what plays instead of
-    // dead silence. Idempotent -- safe to call repeatedly while ringing.
+// T
     private fun startRingtoneAudio() {
         if (ringtonePlayer != null) return
         val item = CallStateHolder.activeBackground.value ?: return
@@ -276,7 +270,7 @@ class CallBubbleService : Service() {
             try {
                 windowManager.updateViewLayout(view, layoutParams)
             } catch (e: Exception) {
-                // view may already be detached (call ended mid-drag) -- ignore
+                // view may already be detached
             }
         }
 

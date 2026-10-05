@@ -34,15 +34,25 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.Call as CallIconVector
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.CallMerge
+import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SwapCalls
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
@@ -154,59 +164,67 @@ private fun formatCallDuration(totalSeconds: Int): String {
     return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
 }
 
+private fun cycleAudioRoute(state: CallAudioState?): Int {
+    val mask = state?.supportedRouteMask ?: 0
+    return when (state?.route) {
+        CallAudioState.ROUTE_SPEAKER ->
+            if (mask and CallAudioState.ROUTE_BLUETOOTH != 0) CallAudioState.ROUTE_BLUETOOTH else CallAudioState.ROUTE_WIRED_OR_EARPIECE
+        CallAudioState.ROUTE_BLUETOOTH -> CallAudioState.ROUTE_WIRED_OR_EARPIECE
+        else -> CallAudioState.ROUTE_SPEAKER
+    }
+}
+
+private fun mergeCalls(candidate: CallInfo) {
+    val c = candidate.call
+    if (c.details.can(Call.Details.CAPABILITY_MERGE_CONFERENCE)) {
+        c.mergeConference()
+    } else {
+        c.conferenceableCalls.firstOrNull()?.let { c.conference(it) }
+    }
+}
+
+@Composable
+private fun rememberName(context: Context, number: String): String? {
+    var name by remember(number) { mutableStateOf<String?>(null) }
+    LaunchedEffect(number) {
+        name = withContext(Dispatchers.IO) { ContactCache.nameFor(context, number) }
+    }
+    return name
+}
+
 @Composable
 fun InCallScreen() {
     val context = LocalContext.current
-    val call by CallStateHolder.activeCall.collectAsState()
+    val calls by CallStateHolder.calls.collectAsState()
     val audioState by CallStateHolder.audioState.collectAsState()
     val activeBackground by CallStateHolder.activeBackground.collectAsState()
-    var callState by remember { mutableStateOf(Call.STATE_DISCONNECTED) }
     var photo by remember { mutableStateOf<Bitmap?>(null) }
-    var contactName by remember { mutableStateOf<String?>(null) }
     val isRecording by CallRecordingManager.isRecording.collectAsState()
     val recordingScope = rememberCoroutineScope()
+    val quickResponsesOn = remember { AppPrefs.quickResponsesEnabled(context) }
+    val quickResponses = remember { AppPrefs.quickResponses(context).filter { it.isNotBlank() } }
+    var showResponses by remember { mutableStateOf(false) }
+    var showNotes by remember { mutableStateOf(false) }
 
-    val number = call?.details?.handle?.schemeSpecificPart ?: "Unknown"
-    var videoState by remember { mutableIntStateOf(call?.details?.videoState ?: VideoProfile.STATE_AUDIO_ONLY) }
-    val isVideoCall = VideoProfile.isVideo(videoState)
+    // Keeps the last primary around so "Call ended" still has a name once the list empties.
+    val livePrimary = pickPrimary(calls)
+    var lastPrimary by remember { mutableStateOf<CallInfo?>(null) }
+    SideEffect { if (livePrimary != null) lastPrimary = livePrimary }
+    val primary = livePrimary ?: lastPrimary
 
-    DisposableEffect(call) {
-        val current = call
-        val callback = object : Call.Callback() {
-            override fun onStateChanged(c: Call, state: Int) {
-                callState = state
-            }
-            override fun onDetailsChanged(c: Call, details: Call.Details) {
-                videoState = details.videoState
-            }
-        }
-        current?.registerCallback(callback)
-        callState = current?.state ?: Call.STATE_DISCONNECTED
-        videoState = current?.details?.videoState ?: VideoProfile.STATE_AUDIO_ONLY
-        onDispose { current?.unregisterCallback(callback) }
-    }
-
-    // Call effect & processing. 
-    LaunchedEffect(number) {
-        contactName = withContext(Dispatchers.IO) { ContactCache.nameFor(context, number) }
-    }
-
-    // Set once, the first time the call goes active, and left alone through
-    // any later hold/unhold -- elapsedRealtime so a wall-clock/NTP jump
-    // mid-call can't skew the timer.
-    var connectedAtElapsed by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(callState) {
-        if (callState == Call.STATE_ACTIVE && connectedAtElapsed == null) {
-            connectedAtElapsed = SystemClock.elapsedRealtime()
-        }
-        if (callState == Call.STATE_DISCONNECTED) {
-            connectedAtElapsed = null
-        }
-    }
+    val callState = if (livePrimary == null) Call.STATE_DISCONNECTED else livePrimary.state
+    val number = primary?.number ?: "Unknown"
+    val isConference = primary?.isConference == true
+    val isVideoCall = VideoProfile.isVideo(primary?.videoState ?: VideoProfile.STATE_AUDIO_ONLY)
+    val waiting = calls.firstOrNull { it.state == Call.STATE_RINGING && it.call !== primary?.call }
+    val held = calls.firstOrNull { it.state == Call.STATE_HOLDING && it.call !== primary?.call }
+    val mergeCandidate = calls.firstOrNull { it.canMerge && it.state != Call.STATE_RINGING }
+    val contactName = rememberName(context, number)
 
     var elapsedSeconds by remember { mutableIntStateOf(0) }
-    LaunchedEffect(connectedAtElapsed) {
-        val startedAt = connectedAtElapsed ?: return@LaunchedEffect
+    val connectedAt = primary?.connectedAtElapsed
+    LaunchedEffect(connectedAt) {
+        val startedAt = connectedAt ?: return@LaunchedEffect
         while (true) {
             elapsedSeconds = ((SystemClock.elapsedRealtime() - startedAt) / 1000).toInt()
             delay(1000)
@@ -222,10 +240,9 @@ fun InCallScreen() {
     }
 
     val activity = LocalContext.current as? android.app.Activity
-    LaunchedEffect(callState) {
-        if (callState == Call.STATE_DISCONNECTED) {
-            if (CallRecordingManager.isRecording.value) CallRecordingManager.stop()
-            delay(500)
+    LaunchedEffect(calls.isEmpty()) {
+        if (calls.isEmpty()) {
+            delay(if (lastPrimary != null) 700 else 0)
             activity?.finish()
         }
     }
@@ -253,6 +270,10 @@ fun InCallScreen() {
 
     val videoBackground = activeBackground?.takeIf { it.isVideo }
     val hasVisualBackground = videoBackground != null || photo != null
+
+    if (showNotes) {
+        NotesDialog(number = number, onDismiss = { showNotes = false })
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF101415))) {
         if (videoBackground != null) {
@@ -287,15 +308,36 @@ fun InCallScreen() {
         )
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
+            modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(56.dp))
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                AnimatedVisibility(
+                    visible = waiting != null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    if (waiting != null) {
+                        WaitingCallBanner(
+                            info = waiting,
+                            onDecline = { waiting.call.reject(false, null) },
+                            onAnswer = { waiting.call.answer(waiting.videoState) }
+                        )
+                    }
+                }
+                AnimatedVisibility(
+                    visible = held != null && waiting == null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    if (held != null) {
+                        HeldCallRow(info = held, onSwap = { held.call.unhold() })
+                    }
+                }
+                Spacer(modifier = Modifier.height(32.dp))
                 Text(
-                    contactName ?: number,
+                    if (isConference) "Conference call" else (contactName ?: number),
                     fontSize = 40.sp,
                     fontWeight = FontWeight.Light,
                     color = Color.White,
@@ -328,111 +370,321 @@ fun InCallScreen() {
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White.copy(alpha = 0.85f)
                 )
-                Spacer(modifier = Modifier.height(28.dp))
-                Box(contentAlignment = Alignment.Center) {
-                    if (isRinging) {
+                Spacer(modifier = Modifier.height(24.dp))
+                if (isConference && primary != null) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        primary.children.forEach { child -> ParticipantRow(child) }
+                    }
+                } else {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (isRinging) {
+                            Box(
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .scale(pulseScale)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = pulseAlpha * 0.3f))
+                            )
+                        }
                         Box(
                             modifier = Modifier
-                                .size(96.dp)
-                                .scale(pulseScale)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = pulseAlpha * 0.3f))
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(76.dp)
-                            .liquidGlass(shape = CircleShape)
-                            .blur(if (hasVisualBackground) 8.dp else 0.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            if (hasVisualBackground) Icons.Filled.CallIconVector else Icons.Filled.Person,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp)
-                        )
+                                .size(76.dp)
+                                .liquidGlass(shape = CircleShape)
+                                .blur(if (hasVisualBackground) 8.dp else 0.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                if (hasVisualBackground) Icons.Filled.CallIconVector else Icons.Filled.Person,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
                     }
                 }
             }
 
             Crossfade(targetState = isRinging, label = "callControls") { ringing ->
                 if (ringing) {
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
-                    ) {
-                        CallActionButton(
-                            icon = Icons.Filled.CallEnd,
-                            label = "DECLINE",
-                            color = CallRed,
-                            onClick = { call?.reject(false, null) }
-                        )
-                        CallActionButton(
-                            icon = Icons.Filled.CallIconVector,
-                            label = "ACCEPT",
-                            color = CallGreen,
-                            onClick = {
-                                // Forcing STATE_AUDIO_ONLY here would decline the video half of
-                                // an incoming video call even when the caller offered it -- answer
-                                // with whatever was actually requested instead.
-                                val requestedState = call?.details?.videoState ?: VideoProfile.STATE_AUDIO_ONLY
-                                call?.answer(requestedState)
-                            }
-                        )
-                    }
-                } else {
-                    val isSpeakerOn = audioState?.route == CallAudioState.ROUTE_SPEAKER
-                    val isMuted = audioState?.isMuted == true
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     ) {
+                        AnimatedVisibility(
+                            visible = showResponses && quickResponsesOn,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            GlassCard(modifier = Modifier.padding(bottom = 20.dp)) {
+                                quickResponses.forEach { text ->
+                                    Text(
+                                        text,
+                                        fontSize = 15.sp,
+                                        color = TextPrimary,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .pressScale(onClick = { primary?.call?.reject(true, text) })
+                                            .padding(horizontal = 20.dp, vertical = 14.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            CallActionButton(
+                                icon = Icons.Filled.CallEnd,
+                                label = "DECLINE",
+                                color = CallRed,
+                                onClick = { primary?.call?.reject(false, null) }
+                            )
+                            if (quickResponsesOn) {
+                                CallActionButton(
+                                    icon = Icons.AutoMirrored.Filled.Message,
+                                    label = "MESSAGE",
+                                    color = CallBlue,
+                                    onClick = { showResponses = !showResponses }
+                                )
+                            }
+                            CallActionButton(
+                                icon = Icons.Filled.CallIconVector,
+                                label = "ACCEPT",
+                                color = CallGreen,
+                                onClick = {
+                                    // Forcing STATE_AUDIO_ONLY here would decline the video half of
+                                    // an incoming video call even when the caller offered it -- answer
+                                    // with whatever was actually requested instead.
+                                    val requestedState = primary?.call?.details?.videoState ?: VideoProfile.STATE_AUDIO_ONLY
+                                    primary?.call?.answer(requestedState)
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    val route = audioState?.route
+                    val isSpeakerOn = route == CallAudioState.ROUTE_SPEAKER
+                    val isBluetooth = route == CallAudioState.ROUTE_BLUETOOTH
+                    val isMuted = audioState?.isMuted == true
+                    val isHolding = callState == Call.STATE_HOLDING
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                        ) {
+                            ControlButton(
+                                icon = if (isBluetooth) Icons.Filled.Bluetooth else Icons.Filled.VolumeUp,
+                                label = if (isBluetooth) "Bluetooth" else "Speaker",
+                                active = isSpeakerOn || isBluetooth,
+                                accent = CallBlue,
+                                onClick = { TurboInCallService.instance?.setAudioRoute(cycleAudioRoute(audioState)) }
+                            )
+                            ControlButton(
+                                icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                                label = "Mute",
+                                active = isMuted,
+                                accent = AccentAmber,
+                                onClick = { TurboInCallService.instance?.setMuted(!isMuted) }
+                            )
+                            ControlButton(
+                                icon = if (isHolding) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                label = if (isHolding) "Resume" else "Hold",
+                                active = isHolding,
+                                accent = AccentViolet,
+                                onClick = { if (isHolding) primary?.call?.unhold() else primary?.call?.hold() }
+                            )
+                            ControlButton(
+                                icon = null,
+                                label = "Record",
+                                active = isRecording,
+                                recordDot = true,
+                                onClick = {
+                                    recordingScope.launch(Dispatchers.IO) {
+                                        if (isRecording) CallRecordingManager.stop()
+                                        else CallRecordingManager.start(context, if (isConference) "conference" else number, primary?.call)
+                                    }
+                                }
+                            )
+                        }
                         Row(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp)
                         ) {
-                            SmallToggleButton(
-                                icon = Icons.Filled.VolumeUp,
-                                active = isSpeakerOn,
+                            ControlButton(
+                                icon = Icons.Filled.NoteAdd,
+                                label = "Notes",
+                                active = false,
+                                onClick = { showNotes = true }
+                            )
+                            ControlButton(
+                                icon = Icons.Filled.PersonAdd,
+                                label = "Add call",
+                                active = false,
                                 onClick = {
-                                    val target = if (isSpeakerOn) CallAudioState.ROUTE_EARPIECE else CallAudioState.ROUTE_SPEAKER
-                                    TurboInCallService.instance?.setAudioRoute(target)
+                                    context.startActivity(
+                                        Intent(context, MainActivity::class.java)
+                                            .setAction(Intent.ACTION_DIAL)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
                                 }
                             )
-                            SmallToggleButton(
-                                icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
-                                active = isMuted,
-                                onClick = { TurboInCallService.instance?.setMuted(!isMuted) }
-                            )
-                            SmallToggleButton(
-                                icon = Icons.Filled.Pause,
-                                active = callState == Call.STATE_HOLDING,
-                                onClick = {
-                                    if (callState == Call.STATE_HOLDING) call?.unhold() else call?.hold()
-                                }
-                            )
-                            RecordToggleButton(
-                                active = isRecording,
-                                onClick = {
-                                    recordingScope.launch(Dispatchers.IO) {
-                                        if (isRecording) CallRecordingManager.stop()
-                                        else CallRecordingManager.start(context, number)
+                            if (held != null || primary?.canSwapConference == true) {
+                                ControlButton(
+                                    icon = Icons.Filled.SwapCalls,
+                                    label = "Swap",
+                                    active = false,
+                                    onClick = {
+                                        if (held != null) held.call.unhold() else primary?.call?.swapConference()
                                     }
-                                }
-                            )
+                                )
+                            }
+                            if (mergeCandidate != null) {
+                                ControlButton(
+                                    icon = Icons.Filled.CallMerge,
+                                    label = "Merge",
+                                    active = false,
+                                    onClick = { mergeCalls(mergeCandidate) }
+                                )
+                            }
                         }
                         CallActionButton(
                             icon = Icons.Filled.CallEnd,
                             label = "END CALL",
                             color = CallRed,
-                            onClick = { call?.disconnect() }
+                            onClick = { primary?.call?.disconnect() }
                         )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun WaitingCallBanner(info: CallInfo, onDecline: () -> Unit, onAnswer: () -> Unit) {
+    val context = LocalContext.current
+    val name = rememberName(context, info.number)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidGlass(shape = RoundedCornerShape(24.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name ?: info.number, fontSize = 16.sp, color = Color.White, maxLines = 1)
+            Text("Call waiting", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+        }
+        MiniRoundButton(Icons.Filled.CallEnd, CallRed, onDecline)
+        Spacer(modifier = Modifier.width(10.dp))
+        MiniRoundButton(Icons.Filled.CallIconVector, CallGreen, onAnswer)
+    }
+}
+
+@Composable
+private fun HeldCallRow(info: CallInfo, onSwap: () -> Unit) {
+    val context = LocalContext.current
+    val name = rememberName(context, info.number)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidGlass(shape = RoundedCornerShape(24.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(if (info.isConference) "Conference call" else (name ?: info.number), fontSize = 16.sp, color = Color.White, maxLines = 1)
+            Text("On hold", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+        }
+        MiniRoundButton(Icons.Filled.SwapCalls, CallBlue, onSwap)
+    }
+}
+
+@Composable
+private fun ParticipantRow(info: CallInfo) {
+    val context = LocalContext.current
+    val name = rememberName(context, info.number)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidGlass(shape = RoundedCornerShape(20.dp))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(name ?: info.number, fontSize = 15.sp, color = Color.White, maxLines = 1, modifier = Modifier.weight(1f))
+        if (info.canSplit) {
+            MiniRoundButton(Icons.Filled.CallSplit, CallBlue) { info.call.splitFromConference() }
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        MiniRoundButton(Icons.Filled.CallEnd, CallRed) { info.call.disconnect() }
+    }
+}
+
+@Composable
+private fun MiniRoundButton(icon: ImageVector, color: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .liquidGlass(shape = CircleShape, tint = color, tintAlpha = 0.75f)
+            .pressScale(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun NotesDialog(number: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var text by remember { mutableStateOf("") }
+    val existing = remember(number) { AppPrefs.callNotes(context, number) }
+    val formatter = remember { java.text.SimpleDateFormat("MMM d, " + AppPrefs.timePattern(context), java.util.Locale.getDefault()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceCard,
+        title = { Text("Call notes", color = TextPrimary) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("Write a note...", color = TextSecondary) },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = AccentIndigo,
+                        unfocusedBorderColor = OutlineFaint
+                    )
+                )
+                if (existing.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Column(modifier = Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState())) {
+                        existing.reversed().forEach { (time, note) ->
+                            Text(formatter.format(java.util.Date(time)), fontSize = 11.sp, color = TextSecondary)
+                            Text(note, fontSize = 14.sp, color = TextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                AppPrefs.addCallNote(context, number, text)
+                onDismiss()
+            }) { Text("Save", color = AccentIndigo) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextPrimary) }
+        }
+    )
 }
 
 @Composable
@@ -458,42 +710,44 @@ private fun CallActionButton(
 }
 
 @Composable
-private fun SmallToggleButton(
-    icon: ImageVector,
+private fun ControlButton(
+    icon: ImageVector?,
+    label: String,
     active: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    recordDot: Boolean = false,
+    accent: Color = CallBlue
 ) {
-    Box(
-        modifier = Modifier
-            .size(52.dp)
-            .liquidGlass(shape = CircleShape, tintAlpha = if (active) 0.85f else 0.18f)
-            .pressScale(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = if (active) Color(0xFF101415) else Color.White,
-            modifier = Modifier.size(22.dp)
-        )
-    }
-}
-
-@Composable
-private fun RecordToggleButton(active: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(52.dp)
-            .liquidGlass(shape = CircleShape, tint = if (active) CallRed else GlassTint, tintAlpha = if (active) 0.75f else 0.18f)
-            .pressScale(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .size(16.dp)
-                .clip(CircleShape)
-                .background(if (active) Color.White else CallRed)
-        )
+                .size(52.dp)
+                .liquidGlass(
+                    shape = CircleShape,
+                    tint = if (recordDot && active) CallRed else if (active) accent else GlassTint,
+                    tintAlpha = if (active) 0.8f else 0.18f
+                )
+                .pressScale(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (recordDot) {
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(CircleShape)
+                        .background(if (active) Color.White else CallRed)
+                )
+            } else if (icon != null) {
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f))
     }
 }
 

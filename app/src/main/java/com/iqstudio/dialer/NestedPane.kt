@@ -31,14 +31,14 @@ fun AnimatedContentTransitionScope<*>.nestedPaneTransitionSpec(): ContentTransfo
             slideInHorizontally(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
+                    stiffness = Spring.StiffnessMedium
                 )
             ) { it / 3 } + fadeIn()
         ).togetherWith(
             slideOutHorizontally(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
+                    stiffness = Spring.StiffnessMedium
                 )
             ) { -it / 3 } + fadeOut()
         )
@@ -47,14 +47,14 @@ fun AnimatedContentTransitionScope<*>.nestedPaneTransitionSpec(): ContentTransfo
             slideInHorizontally(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
+                    stiffness = Spring.StiffnessMedium
                 )
             ) { -it / 3 } + fadeIn()
         ).togetherWith(
             slideOutHorizontally(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
+                    stiffness = Spring.StiffnessMedium
                 )
             ) { it / 3 } + fadeOut()
         )

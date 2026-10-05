@@ -60,7 +60,7 @@ private fun loadCallLogFromProvider(context: Context): List<CallLogEntry> {
     val entries = mutableListOf<CallLogEntry>()
     context.contentResolver.query(
         CallLog.Calls.CONTENT_URI,
-        arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME, CallLog.Calls.TYPE, CallLog.Calls.DATE, CallLog.Calls.DURATION),
+        arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME, CallLog.Calls.TYPE, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls._ID),
         null, null,
         CallLog.Calls.DATE + " DESC"
     )?.use { cursor ->
@@ -69,9 +69,11 @@ private fun loadCallLogFromProvider(context: Context): List<CallLogEntry> {
         val typeIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
         val dateIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
         val durationIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
+        val idIdx = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
         while (cursor.moveToNext()) {
             entries.add(
                 CallLogEntry(
+                    id = cursor.getLong(idIdx),
                     number = cursor.getString(numberIdx) ?: "",
                     name = cursor.getString(nameIdx),
                     type = cursor.getInt(typeIdx),
@@ -89,7 +91,8 @@ data class GroupedCallLogEntry(
     val name: String?,
     val type: Int,
     val date: Long,
-    val count: Int
+    val count: Int,
+    val ids: List<Long> = emptyList()
 )
 
 private fun groupConsecutive(entries: List<CallLogEntry>): List<GroupedCallLogEntry> {
@@ -97,9 +100,9 @@ private fun groupConsecutive(entries: List<CallLogEntry>): List<GroupedCallLogEn
     for (entry in entries) {
         val last = result.lastOrNull()
         if (last != null && last.number == entry.number) {
-            result[result.size - 1] = last.copy(count = last.count + 1)
+            result[result.size - 1] = last.copy(count = last.count + 1, ids = last.ids + entry.id)
         } else {
-            result.add(GroupedCallLogEntry(entry.number, entry.name, entry.type, entry.date, 1))
+            result.add(GroupedCallLogEntry(entry.number, entry.name, entry.type, entry.date, 1, listOf(entry.id)))
         }
     }
     return result
@@ -114,9 +117,6 @@ object DataCache {
     private val _contacts = MutableStateFlow<List<ContactEntry>?>(null)
     val contacts: StateFlow<List<ContactEntry>?> = _contacts
 
-    private val _callLog = MutableStateFlow<List<CallLogEntry>?>(null)
-    val callLog: StateFlow<List<CallLogEntry>?> = _callLog
-    
     private val _groupedCallLog = MutableStateFlow<List<GroupedCallLogEntry>?>(null)
     val groupedCallLog: StateFlow<List<GroupedCallLogEntry>?> = _groupedCallLog
 
@@ -134,9 +134,7 @@ object DataCache {
     }
 
     private suspend fun refreshCallLog(context: Context) {
-        val entries = loadCallLogFromProvider(context)
-        _callLog.value = entries
-        _groupedCallLog.value = groupConsecutive(entries)
+        _groupedCallLog.value = groupConsecutive(loadCallLogFromProvider(context))
     }
     
     private fun ensureObservers(context: Context) {
@@ -162,5 +160,7 @@ object DataCache {
         )
     }
 }
+
+// Just Waiting till somebody says: why not SQL? 🤡
 
 // end
