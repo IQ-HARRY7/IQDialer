@@ -209,7 +209,7 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                                             .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                                             .build()
                                     )
-                                }) { Text(if (backgrounds.isEmpty()) "Add photos or videos" else "Add more", color = Color.White) }
+                                }) { Text(if (backgrounds.isEmpty()) "Add photos or videos" else "Add more", color = ContentPrimary) }
                             }
                         }
 
@@ -231,7 +231,7 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                                         putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                                     }
                                     ringtoneLauncher.launch(intent)
-                                }) { Text("Choose ringtone", color = Color.White) }
+                                }) { Text("Choose ringtone", color = ContentPrimary) }
                             }
                         }
 
@@ -614,6 +614,10 @@ private fun BackgroundFitEditor(
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
+    DisposableEffect(Unit) {
+        AppTheme.pushDark()
+        onDispose { AppTheme.popDark() }
+    }
     var scale by remember { mutableFloatStateOf(item.scale) }
     var offsetX by remember { mutableFloatStateOf(item.offsetX) }
     var offsetY by remember { mutableFloatStateOf(item.offsetY) }

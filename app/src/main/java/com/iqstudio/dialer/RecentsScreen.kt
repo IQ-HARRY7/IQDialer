@@ -441,7 +441,9 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
     DisposableEffect(Unit) { onDispose { toneGenerator.release() } }
 
     val hasNumber = DialpadState.value.text.isNotEmpty()
-    val panelShape = RoundedCornerShape(topStart = 48.dp, topEnd = 48.dp)
+    val advanced = VisualMode.advanced
+    val panelRadius = if (advanced) 48.dp else 28.dp
+    val panelShape = RoundedCornerShape(topStart = panelRadius, topEnd = panelRadius)
     val columnTints = listOf(AccentTeal, AccentIndigo, AccentPink)
     val underlineAlpha by animateFloatAsState(if (hasNumber) 1f else 0.25f, label = "dialpadUnderline")
     val callAlpha by animateFloatAsState(if (hasNumber) 1f else 0.55f, label = "dialpadCall")
@@ -469,14 +471,26 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
             .fillMaxWidth()
             .fillMaxHeight(0.55f)
             .clip(panelShape)
-            .background(Brush.verticalGradient(listOf(AccentViolet.copy(alpha = 0.14f), Color.Transparent)))
-            .liquidGlass(shape = panelShape, tintAlpha = 0.32f)
-            .border(
-                2.dp,
-                Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.7f), AccentIndigo.copy(alpha = 0.45f), AccentPink.copy(alpha = 0.55f))
-                ),
-                panelShape
+            .then(
+                if (advanced) Modifier.background(Brush.verticalGradient(listOf(AccentViolet.copy(alpha = 0.14f), Color.Transparent)))
+                else Modifier
+            )
+            .then(
+                if (advanced) Modifier.liquidGlass(shape = panelShape, tintAlpha = 0.32f)
+                else Modifier.background(MinimalSurface)
+            )
+            .then(
+                if (advanced) {
+                    Modifier.border(
+                        2.dp,
+                        Brush.linearGradient(
+                            listOf(Color.White.copy(alpha = 0.7f), AccentIndigo.copy(alpha = 0.45f), AccentPink.copy(alpha = 0.55f))
+                        ),
+                        panelShape
+                    )
+                } else {
+                    Modifier
+                }
             )
             // Swallows taps in the gaps between keys so they don't reach the list underneath.
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
@@ -488,7 +502,7 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                 .padding(top = 2.dp, bottom = 6.dp)
                 .size(width = 36.dp, height = 4.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.4f))
+                .background(ContentPrimary.copy(alpha = if (advanced) 0.4f else 0.25f))
         )
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Spacer(modifier = Modifier.size(36.dp))
@@ -500,7 +514,7 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                 textStyle = TextStyle(
                     fontSize = 34.sp,
                     fontWeight = FontWeight.ExtraLight,
-                    color = Color.White,
+                    color = ContentPrimary,
                     textAlign = TextAlign.Center,
                     letterSpacing = 1.sp
                 ),
@@ -508,7 +522,7 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                 decorationBox = { inner ->
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         if (!hasNumber) {
-                            Text("Enter number", color = Color.White.copy(alpha = 0.3f), fontSize = 20.sp, fontWeight = FontWeight.Light)
+                            Text("Enter number", color = ContentPrimary.copy(alpha = 0.3f), fontSize = 20.sp, fontWeight = FontWeight.Light)
                         }
                         inner()
                     }
@@ -524,7 +538,7 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                             .pressScale { backspace() },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete", tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete", tint = ContentPrimary, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -536,7 +550,10 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                 .height(2.dp)
                 .graphicsLayer { alpha = underlineAlpha }
                 .clip(CircleShape)
-                .background(Brush.horizontalGradient(listOf(Color.Transparent, AccentIndigo, AccentPink, Color.Transparent)))
+                .background(
+                    if (advanced) Brush.horizontalGradient(listOf(Color.Transparent, AccentIndigo, AccentPink, Color.Transparent))
+                    else SolidColor(MinimalDivider)
+                )
         )
         DIAL_ROWS.forEach { row ->
             // Rows split whatever height is left; keys size off the row (capped),
@@ -556,10 +573,16 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                             .fillMaxHeight(0.94f)
                             .aspectRatio(1f, matchHeightConstraintsFirst = true)
                             .liquidGlass(shape = CircleShape, tint = tint, tintAlpha = 0.2f)
-                            .border(
-                                1.2.dp,
-                                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.6f), tint.copy(alpha = 0.4f))),
-                                CircleShape
+                            .then(
+                                if (advanced) {
+                                    Modifier.border(
+                                        1.2.dp,
+                                        Brush.linearGradient(listOf(Color.White.copy(alpha = 0.6f), tint.copy(alpha = 0.4f))),
+                                        CircleShape
+                                    )
+                                } else {
+                                    Modifier
+                                }
                             )
                             .pressScale { press(key) }
                     ) {
@@ -567,10 +590,10 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                             key.digit,
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Light,
-                            color = Color.White,
+                            color = ContentPrimary,
                             modifier = if (key.digit == "*") Modifier.offset(y = 6.dp) else Modifier
                         )
-                        Text(key.sub, fontSize = 10.sp, color = AccentSoft, letterSpacing = 1.sp)
+                        Text(key.sub, fontSize = 10.sp, color = if (advanced) AccentSoft else TextSecondary, letterSpacing = 1.sp)
                     }
                 }
             }
@@ -586,7 +609,7 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                 modifier = Modifier
                     .graphicsLayer { alpha = callAlpha }
                     .drawBehind {
-                        if (hasNumber) {
+                        if (hasNumber && advanced) {
                             val reach = size.maxDimension * 0.75f
                             drawCircle(
                                 brush = Brush.radialGradient(
@@ -622,7 +645,7 @@ private fun EmbeddedDialpad(onCall: (String) -> Unit, onClose: () -> Unit, modif
                     .pressScale(onClick = onClose),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Close, contentDescription = "Close dialpad", tint = Color.White, modifier = Modifier.size(22.dp))
+                Icon(Icons.Filled.Close, contentDescription = "Close dialpad", tint = ContentPrimary, modifier = Modifier.size(22.dp))
             }
         }
     }

@@ -12,6 +12,7 @@ package com.iqstudio.dialer
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Color
@@ -32,6 +33,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -56,6 +58,45 @@ class CallBubbleService : Service() {
     private var registeredCall: Call? = null
     private var speakerSwitchPending = false
     private var ringtonePlayer: ExoPlayer? = null
+    private var bubbleHidden = false
+
+    // Start, hide and stop requests are routed through the service itself, so a stop can
+    // never arrive before startForeground() has run. All calls happen on the main thread.
+    companion object {
+        private var instance: CallBubbleService? = null
+        private var startPending = false
+        private var stopWhenReady = false
+        private var hideWhenReady = false
+
+        fun show(context: Context) {
+            val service = instance
+            if (service != null) {
+                service.revealBubble()
+                return
+            }
+            stopWhenReady = false
+            hideWhenReady = false
+            if (startPending) return
+            startPending = true
+            try {
+                val appContext = context.applicationContext
+                ContextCompat.startForegroundService(appContext, Intent(appContext, CallBubbleService::class.java))
+            } catch (e: Exception) {
+                startPending = false
+                Log.e(TAG, "Could not start the bubble service", e)
+            }
+        }
+
+        fun hide() {
+            val service = instance
+            if (service != null) service.concealBubble() else if (startPending) hideWhenReady = true
+        }
+
+        fun stop() {
+            val service = instance
+            if (service != null) service.stopSelf() else if (startPending) stopWhenReady = true
+        }
+    }
 
     private val callCallback = object : Call.Callback() {
         override fun onStateChanged(call: Call, state: Int) {
@@ -74,18 +115,60 @@ class CallBubbleService : Service() {
         try {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             startForeground(BUBBLE_FOREGROUND_NOTIFICATION_ID, buildForegroundNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
-            showBubble()
         } catch (e: Exception) {
             Log.e(TAG, "onCreate failed, stopping bubble service", e)
+            startPending = false
             stopSelf()
+            return
+        }
+        instance = this
+        startPending = false
+        bubbleHidden = hideWhenReady || stopWhenReady
+        val stopNow = stopWhenReady
+        stopWhenReady = false
+        hideWhenReady = false
+        if (stopNow) {
+            stopSelf()
+        } else if (!bubbleHidden) {
+            showBubble()
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (bubbleView == null) {
+        // Every startForegroundService() call has to be answered with startForeground().
+        try {
+            startForeground(BUBBLE_FOREGROUND_NOTIFICATION_ID, buildForegroundNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground failed", e)
+        }
+        if (bubbleView == null && !bubbleHidden) {
             showBubble()
         }
         return START_NOT_STICKY
+    }
+
+    private fun revealBubble() {
+        bubbleHidden = false
+        if (bubbleView == null) showBubble()
+    }
+
+    private fun concealBubble() {
+        bubbleHidden = true
+        removeBubbleView()
+    }
+
+    private fun removeBubbleView() {
+        registeredCall?.unregisterCallback(callCallback)
+        registeredCall = null
+        stopRingtoneAudio()
+        bubbleView?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                // view already gone -- fine
+            }
+        }
+        bubbleView = null
     }
 
     private fun buildForegroundNotification(): Notification {
@@ -228,7 +311,7 @@ class CallBubbleService : Service() {
     }
 // T
     private fun startRingtoneAudio() {
-        if (ringtonePlayer != null) return
+        if (ringtonePlayer != null || InCallActivity.isVisible) return
         val item = CallStateHolder.activeBackground.value ?: return
         if (!item.isVideo || !item.hasSound || item.muted) return
         try {
@@ -333,16 +416,8 @@ class CallBubbleService : Service() {
     }
 
     override fun onDestroy() {
-        registeredCall?.unregisterCallback(callCallback)
-        stopRingtoneAudio()
-        bubbleView?.let {
-            try {
-                windowManager.removeView(it)
-            } catch (e: Exception) {
-                // view already gone -- fine
-            }
-        }
-        bubbleView = null
+        removeBubbleView()
+        if (instance === this) instance = null
         super.onDestroy()
     }
 }

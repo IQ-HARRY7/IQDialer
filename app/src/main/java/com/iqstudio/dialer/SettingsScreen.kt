@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.RingVolume
 import androidx.compose.material.icons.filled.Schedule
@@ -53,6 +55,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var showBlocklist by remember { mutableStateOf(false) }
     var showAdvanced by remember { mutableStateOf(false) }
     var showIncoming by remember { mutableStateOf(false) }
+    var themeMenu by remember { mutableStateOf(false) }
     var aboutTaps by remember { mutableIntStateOf(0) }
     var lastAboutTap by remember { mutableLongStateOf(0L) }
     var aboutToast by remember { mutableStateOf<Toast?>(null) }
@@ -96,6 +99,52 @@ fun SettingsScreen(onBack: () -> Unit) {
                     }
 
                     Column(modifier = Modifier.padding(16.dp)) {
+                        GlassCard {
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = { IconChip(Icons.Filled.AutoAwesome, AccentPink) },
+                                headlineContent = { Text("Advanced visuals", color = TextPrimary) },
+                                supportingContent = {
+                                    Text("Liquid glass, floating navigation and visual effects. Off keeps the minimal interface.", color = TextSecondary)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = VisualMode.advanced,
+                                        onCheckedChange = { VisualMode.set(context, it) },
+                                        colors = switchColors
+                                    )
+                                }
+                            )
+                            if (!VisualMode.advanced) {
+                                HorizontalDivider(color = OutlineFaint.copy(alpha = 0.3f))
+                                ListItem(
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                    modifier = Modifier.clickable { themeMenu = true },
+                                    leadingContent = { IconChip(Icons.Filled.Brightness6, AccentAmber) },
+                                    headlineContent = { Text("Theme", color = TextPrimary) },
+                                    trailingContent = {
+                                        Box {
+                                            Text(AppTheme.choice.label, color = TextSecondary, fontSize = 13.sp)
+                                            GlassDropdownMenu(expanded = themeMenu, onDismissRequest = { themeMenu = false }) {
+                                                ThemeChoice.values().forEach { option ->
+                                                    GlassDropdownMenuItem(
+                                                        text = option.label,
+                                                        selected = option == AppTheme.choice,
+                                                        onClick = {
+                                                            AppTheme.set(context, option)
+                                                            themeMenu = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         GlassCard {
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),

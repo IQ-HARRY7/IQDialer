@@ -1,0 +1,11 @@
+<!--
+Copyright© IQ-STUDIO 2026 (ptv limited)
+IQDialer project uses GPL3 (or later). Light-system variant of the starting window theme.
+-->
+<resources>
+    <style name="Theme.IQDialer" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FFF4F6F8</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

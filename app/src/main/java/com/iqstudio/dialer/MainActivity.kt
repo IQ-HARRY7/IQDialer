@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
                     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
                         MainScreen()
                     }
+                    CrashReportPrompt()
                 }
             }
         }
@@ -69,7 +70,8 @@ fun MainScreen() {
     var isNested by remember { mutableStateOf(false) }
 
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val pillReservedHeight = navBarInset + 72.dp
+    val advanced = VisualMode.advanced
+    val pillReservedHeight = navBarInset + if (advanced) 72.dp else 80.dp
 
     Box(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize().padding(bottom = pillReservedHeight)) {
@@ -98,7 +100,15 @@ fun MainScreen() {
             }
         }
 
-        if (!isNested) {
+        if (!isNested && !advanced) {
+            MinimalNavigationBar(
+                selectedTab = selectedTab,
+                onSelect = { selectedTab = it },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        if (!isNested && advanced) {
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -124,6 +134,33 @@ fun MainScreen() {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun MinimalNavigationBar(selectedTab: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val itemColors = NavigationBarItemDefaults.colors(
+        selectedIconColor = ContentPrimary,
+        selectedTextColor = ContentPrimary,
+        indicatorColor = MinimalSurfaceHigh,
+        unselectedIconColor = TextSecondary,
+        unselectedTextColor = TextSecondary
+    )
+    NavigationBar(modifier = modifier, containerColor = MinimalSurface) {
+        NavigationBarItem(
+            selected = selectedTab == 0,
+            onClick = { onSelect(0) },
+            icon = { Icon(Icons.Filled.History, contentDescription = null) },
+            label = { Text("Recents") },
+            colors = itemColors
+        )
+        NavigationBarItem(
+            selected = selectedTab == 1,
+            onClick = { onSelect(1) },
+            icon = { Icon(Icons.Filled.Person, contentDescription = null) },
+            label = { Text("Contacts") },
+            colors = itemColors
+        )
     }
 }
 

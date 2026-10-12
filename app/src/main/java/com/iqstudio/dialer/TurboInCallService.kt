@@ -25,6 +25,7 @@ import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.DisconnectCause
 import android.telecom.InCallService
+import android.telecom.TelecomManager
 import android.telecom.VideoProfile
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -81,6 +82,7 @@ class TurboInCallService : InCallService() {
     }
 
     private var proximityWakeLock: PowerManager.WakeLock? = null
+    private var silencedCall: Call? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -192,9 +194,11 @@ class TurboInCallService : InCallService() {
             val ringing = live.firstOrNull { it.state == Call.STATE_RINGING }
             if (ringing != null) {
                 IncomingRinger.start(this, ringing.number)
+                silenceRingerForVideoSound(ringing.call)
             } else {
                 IncomingRinger.stop()
                 CallStateHolder.customRingerArmed = false
+                silencedCall = null
             }
 
             updateProximity(list)
@@ -202,13 +206,27 @@ class TurboInCallService : InCallService() {
             if (tracked.isEmpty()) {
                 releaseProximity()
                 endForegroundPresentation()
-                stopService(Intent(this, CallBubbleService::class.java))
+                CallBubbleService.stop()
                 CallStateHolder.setCalls(emptyList())
                 return
             }
             present(ringing, pickPrimary(live))
         } catch (e: Exception) {
             Log.e(TAG, "refresh failed", e)
+        }
+    }
+
+    // A video background with sound plays its own audio, so the system ringtone must not play as well.
+    // Call screening normally silences it first; this covers the case where that did not take effect.
+    private fun silenceRingerForVideoSound(call: Call) {
+        if (silencedCall === call) return
+        val background = CallStateHolder.activeBackground.value ?: return
+        if (!background.isVideo || !background.hasSound || background.muted) return
+        silencedCall = call
+        try {
+            getSystemService(TelecomManager::class.java)?.silenceRinger()
+        } catch (e: Exception) {
+            Log.e(TAG, "silenceRinger failed", e)
         }
     }
 
@@ -267,7 +285,7 @@ class TurboInCallService : InCallService() {
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
                 )
                 if (!InCallActivity.isVisible) {
-                    ContextCompat.startForegroundService(this, Intent(this, CallBubbleService::class.java))
+                    CallBubbleService.show(this)
                 }
                 return
             }
@@ -285,7 +303,7 @@ class TurboInCallService : InCallService() {
             }
 
             if (shown.state == Call.STATE_ACTIVE || shown.state == Call.STATE_DIALING || shown.state == Call.STATE_CONNECTING) {
-                ContextCompat.startForegroundService(this, Intent(this, CallBubbleService::class.java))
+                CallBubbleService.show(this)
             }
         } catch (e: Exception) {
             Log.e(TAG, "present failed, call continues without custom UI", e)

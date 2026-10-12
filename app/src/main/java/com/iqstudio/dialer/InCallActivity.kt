@@ -89,6 +89,7 @@ class InCallActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppTheme.pushDark()
         setContent {
             IQDialerTheme {
                 InCallScreen()
@@ -96,11 +97,16 @@ class InCallActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        AppTheme.popDark()
+        super.onDestroy()
+    }
+
     override fun onResume() {
         super.onResume()
         isVisible = true
         // We're the one on screen now -- the bubble (if it was up) shouldn't be.
-        stopService(Intent(this, CallBubbleService::class.java))
+        CallBubbleService.hide()
     }
 
     override fun onPause() {
@@ -109,7 +115,7 @@ class InCallActivity : ComponentActivity() {
         // leaving the bubble...
         val stillOngoing = CallStateHolder.activeCall.value != null
         if (stillOngoing && !isFinishing) {
-            ContextCompat.startForegroundService(this, Intent(this, CallBubbleService::class.java))
+            CallBubbleService.show(this)
         }
     }
 }
@@ -270,6 +276,7 @@ fun InCallScreen() {
 
     val videoBackground = activeBackground?.takeIf { it.isVideo }
     val hasVisualBackground = videoBackground != null || photo != null
+    val advanced = VisualMode.advanced
 
     if (showNotes) {
         NotesDialog(number = number, onDismiss = { showNotes = false })
@@ -293,19 +300,21 @@ fun InCallScreen() {
                 )
             }
         }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = if (hasVisualBackground) 0.45f else 0.85f),
-                            Color(0xFF101415).copy(alpha = if (hasVisualBackground) 0.35f else 0.9f),
-                            Color.Black.copy(alpha = 0.9f)
+        if (advanced || hasVisualBackground) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = if (hasVisualBackground) 0.45f else 0.85f),
+                                Color(0xFF101415).copy(alpha = if (hasVisualBackground) 0.35f else 0.9f),
+                                Color.Black.copy(alpha = 0.9f)
+                            )
                         )
                     )
-                )
-        )
+            )
+        }
 
         Column(
             modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp),
@@ -379,30 +388,34 @@ fun InCallScreen() {
                         primary.children.forEach { child -> ParticipantRow(child) }
                     }
                 } else {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (isRinging) {
+                    if (advanced) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (isRinging) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(96.dp)
+                                        .scale(pulseScale)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = pulseAlpha * 0.3f))
+                                )
+                            }
                             Box(
                                 modifier = Modifier
-                                    .size(96.dp)
-                                    .scale(pulseScale)
-                                    .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = pulseAlpha * 0.3f))
-                            )
+                                    .size(76.dp)
+                                    .liquidGlass(shape = CircleShape)
+                                    .blur(if (hasVisualBackground) 8.dp else 0.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    if (hasVisualBackground) Icons.Filled.CallIconVector else Icons.Filled.Person,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
                         }
-                        Box(
-                            modifier = Modifier
-                                .size(76.dp)
-                                .liquidGlass(shape = CircleShape)
-                                .blur(if (hasVisualBackground) 8.dp else 0.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                if (hasVisualBackground) Icons.Filled.CallIconVector else Icons.Filled.Person,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(36.dp)
-                            )
-                        }
+                    } else {
+                        ContactAvatar(name = contactName, size = 88.dp)
                     }
                 }
             }
@@ -677,7 +690,10 @@ private fun NotesDialog(number: String, onDismiss: () -> Unit) {
         },
         confirmButton = {
             TextButton(onClick = {
-                AppPrefs.addCallNote(context, number, text)
+                val note = text
+                AppPrefs.addCallNote(context, number, note)
+                val appContext = context.applicationContext
+                Thread { CallNoteExporter.export(appContext, number, note) }.start()
                 onDismiss()
             }) { Text("Save", color = AccentIndigo) }
         },

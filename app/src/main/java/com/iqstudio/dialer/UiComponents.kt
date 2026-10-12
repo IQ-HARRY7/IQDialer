@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -110,31 +111,51 @@ private fun initialsFor(name: String): String {
 private fun gradientFor(key: String): Pair<Color, Color> =
     AVATAR_GRADIENTS[abs(key.hashCode()) % AVATAR_GRADIENTS.size]
 
+private val AVATAR_FLAT = listOf(
+    Color(0xFF5C6BC0),
+    Color(0xFF26A69A),
+    Color(0xFF7E57C2),
+    Color(0xFFD4647C),
+    Color(0xFFE08A3C),
+    Color(0xFF42A5C9),
+    Color(0xFF66A86B),
+    Color(0xFF8A8F98)
+)
+
 @Composable
 fun ContactAvatar(name: String?, size: Dp = 44.dp, modifier: Modifier = Modifier) {
+    val advanced = VisualMode.advanced
     Box(
         modifier = modifier.size(size).clip(CircleShape),
         contentAlignment = Alignment.Center
     ) {
         if (!name.isNullOrBlank()) {
-            val (from, to) = gradientFor(name)
+            val fill = if (advanced) {
+                val (from, to) = gradientFor(name)
+                Modifier.background(Brush.linearGradient(listOf(from, to)))
+            } else {
+                Modifier.background(AVATAR_FLAT[abs(name.hashCode()) % AVATAR_FLAT.size])
+            }
             Box(
-                modifier = Modifier.fillMaxSize().background(Brush.linearGradient(listOf(from, to))),
+                modifier = Modifier.fillMaxSize().then(fill),
                 contentAlignment = Alignment.Center
             ) {
                 Text(initialsFor(name), color = Color.White, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.36f).sp)
             }
         } else {
+            val fill = if (advanced) {
+                Modifier.background(Brush.linearGradient(listOf(Color(0xFF4F5BD5), Color(0xFF9B5DE5))))
+            } else {
+                Modifier.background(MinimalSurfaceHigh)
+            }
             Box(
-                modifier = Modifier.fillMaxSize().background(
-                    Brush.linearGradient(listOf(Color(0xFF4F5BD5), Color(0xFF9B5DE5)))
-                ),
+                modifier = Modifier.fillMaxSize().then(fill),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.Filled.Person,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.92f),
+                    tint = if (advanced) Color.White.copy(alpha = 0.92f) else TextSecondary,
                     modifier = Modifier.size(size * 0.5f)
                 )
             }
@@ -145,15 +166,20 @@ fun ContactAvatar(name: String?, size: Dp = 44.dp, modifier: Modifier = Modifier
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun Modifier.pressScale(scaleDown: Float = 0.92f, onLongClick: (() -> Unit)? = null, onClick: () -> Unit): Modifier {
+    val advanced = VisualMode.advanced
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) scaleDown else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        targetValue = if (isPressed) (if (advanced) scaleDown else 0.97f) else 1f,
+        animationSpec = spring(
+            dampingRatio = if (advanced) Spring.DampingRatioMediumBouncy else Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
         label = "pressScale"
     )
     return this
         .scale(scale)
+        .then(if (!advanced && isPressed) Modifier.background(ContentPrimary.copy(alpha = 0.08f)) else Modifier)
         .combinedClickable(interactionSource = interactionSource, indication = null, onLongClick = onLongClick, onClick = onClick)
 }
 
@@ -218,19 +244,22 @@ object BackgroundImageCache {
 @Composable
 fun UniversalBackground(content: @Composable () -> Unit) {
     val context = LocalContext.current
-    val bitmap = remember { BackgroundImageCache.get(context) }
-    Box(modifier = Modifier.fillMaxSize()) {
-        Image(
-            bitmap = bitmap,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF101415).copy(alpha = UniversalScrimAlpha))
-        )
+    val advanced = VisualMode.advanced
+    Box(modifier = Modifier.fillMaxSize().background(if (advanced) Color.Transparent else MinimalBackground)) {
+        if (advanced) {
+            val bitmap = remember { BackgroundImageCache.get(context) }
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF101415).copy(alpha = UniversalScrimAlpha))
+            )
+        }
         content()
     }
 }
@@ -239,32 +268,48 @@ val GlassTint = Color.White
 
 val DarkGlassContent = Color(0xFF101415)
 
+private const val MINIMAL_ACCENT_THRESHOLD = 0.25f
+private const val MINIMAL_RAISED_THRESHOLD = 0.15f
+
+// Advanced: translucent glass. Minimal: solid surface; strongly tinted glass becomes a solid accent fill.
 fun Modifier.liquidGlass(
     shape: Shape = RoundedCornerShape(28.dp),
     tint: Color = GlassTint,
     tintAlpha: Float = 0.18f
-): Modifier = this
-    .clip(shape)
-    .background(
-        Brush.verticalGradient(
-            listOf(
-                tint.copy(alpha = (tintAlpha + 0.14f).coerceAtMost(1f)),
-                tint.copy(alpha = tintAlpha),
-                tint.copy(alpha = (tintAlpha - 0.06f).coerceAtLeast(0.03f))
+): Modifier = composed {
+    if (VisualMode.advanced) {
+        Modifier
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        tint.copy(alpha = (tintAlpha + 0.14f).coerceAtMost(1f)),
+                        tint.copy(alpha = tintAlpha),
+                        tint.copy(alpha = (tintAlpha - 0.06f).coerceAtLeast(0.03f))
+                    )
+                )
             )
-        )
-    )
-    .border(
-        width = 1.2.dp,
-        brush = Brush.linearGradient(
-            listOf(
-                Color.White.copy(alpha = 0.60f),
-                Color.White.copy(alpha = 0.10f),
-                Color.White.copy(alpha = 0.30f)
+            .border(
+                width = 1.2.dp,
+                brush = Brush.linearGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.60f),
+                        Color.White.copy(alpha = 0.10f),
+                        Color.White.copy(alpha = 0.30f)
+                    )
+                ),
+                shape = shape
             )
-        ),
-        shape = shape
-    )
+    } else {
+        val neutral = tint == GlassTint || tintAlpha < MINIMAL_ACCENT_THRESHOLD
+        val fill = when {
+            !neutral -> tint.copy(alpha = (tintAlpha + 0.25f).coerceIn(0.5f, 1f))
+            tintAlpha >= MINIMAL_RAISED_THRESHOLD -> MinimalSurfaceHigh
+            else -> MinimalSurface
+        }
+        Modifier.clip(shape).background(fill)
+    }
+}
 
 @Composable
 fun GlassIconButton(
@@ -281,7 +326,7 @@ fun GlassIconButton(
             .pressScale(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = contentDescription, tint = Color.White, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = contentDescription, tint = ContentPrimary, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -338,7 +383,7 @@ fun GlassChip(
             .padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(text, color = ContentPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -365,16 +410,27 @@ fun GlassRow(
     tint: Color = GlassTint,
     content: @Composable RowScope.() -> Unit
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 5.dp)
-            .liquidGlass(shape = RoundedCornerShape(16.dp), tint = tint, tintAlpha = 0.09f)
-            .pressScale(onLongClick = onLongClick, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content
-    )
+    if (VisualMode.advanced) {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 5.dp)
+                .liquidGlass(shape = RoundedCornerShape(16.dp), tint = tint, tintAlpha = 0.09f)
+                .pressScale(onLongClick = onLongClick, onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content
+        )
+    } else {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .pressScale(onLongClick = onLongClick, onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content
+        )
+    }
 }
 
 @Composable
@@ -386,7 +442,7 @@ fun GlassDropdownMenu(
 ) {
     if (!expanded) return
     val density = LocalDensity.current
-    val menuShape = RoundedCornerShape(20.dp)
+    val menuShape = RoundedCornerShape(if (VisualMode.advanced) 20.dp else 14.dp)
     Popup(
         alignment = Alignment.TopEnd,
         offset = IntOffset(with(density) { (-12).dp.roundToPx() }, with(density) { 8.dp.roundToPx() }),
@@ -397,7 +453,7 @@ fun GlassDropdownMenu(
         LaunchedEffect(Unit) { animateIn = true }
         val scale by animateFloatAsState(
             targetValue = if (animateIn) 1f else 0.85f,
-            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+            animationSpec = spring(dampingRatio = if (VisualMode.advanced) Spring.DampingRatioMediumBouncy else Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
             label = "dropdownScale"
         )
         val alpha by animateFloatAsState(targetValue = if (animateIn) 1f else 0f, label = "dropdownAlpha")
@@ -408,12 +464,21 @@ fun GlassDropdownMenu(
                 .widthIn(min = 210.dp)
                 .width(IntrinsicSize.Max)
                 .clip(menuShape)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFF2E2B52).copy(alpha = 0.58f), Color(0xFF1A2236).copy(alpha = 0.58f))
-                    )
+                .then(
+                    if (VisualMode.advanced) {
+                        Modifier
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color(0xFF2E2B52).copy(alpha = 0.58f), Color(0xFF1A2236).copy(alpha = 0.58f))
+                                )
+                            )
+                            .liquidGlass(shape = menuShape, tint = AccentViolet, tintAlpha = 0.16f)
+                    } else {
+                        Modifier
+                            .background(MinimalSurfaceHigh)
+                            .border(1.dp, MinimalDivider, menuShape)
+                    }
                 )
-                .liquidGlass(shape = menuShape, tint = AccentViolet, tintAlpha = 0.16f)
                 .padding(vertical = 8.dp),
             content = content
         )
@@ -436,19 +501,25 @@ fun GlassDropdownMenuItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .liquidGlass(shape = CircleShape, tint = accent, tintAlpha = 0.34f),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
+            if (VisualMode.advanced) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .liquidGlass(shape = CircleShape, tint = accent, tintAlpha = 0.34f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
+                }
+            } else {
+                Box(modifier = Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+                }
             }
             Spacer(modifier = Modifier.width(12.dp))
         }
         Text(
             text,
-            color = if (selected) accent else Color.White,
+            color = if (selected) accent else ContentPrimary,
             fontSize = 15.sp,
             modifier = Modifier.weight(1f, fill = false)
         )
@@ -459,7 +530,6 @@ fun GlassDropdownMenuItem(
     }
 }
 
-// Rounded gradient tile for a settings row's leading icon.
 @Composable
 fun SearchField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
@@ -497,15 +567,28 @@ fun SearchField(value: String, onValueChange: (String) -> Unit, placeholder: Str
     }
 }
 
+// Rounded tile behind a row's leading icon.
 @Composable
 fun IconChip(icon: ImageVector, accent: Color, size: Dp = 38.dp) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .liquidGlass(shape = RoundedCornerShape(size * 0.32f), tint = accent, tintAlpha = 0.32f),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.52f))
+    if (VisualMode.advanced) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .liquidGlass(shape = RoundedCornerShape(size * 0.32f), tint = accent, tintAlpha = 0.32f),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.52f))
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(size * 0.32f))
+                .background(accent.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(size * 0.52f))
+        }
     }
 }
 

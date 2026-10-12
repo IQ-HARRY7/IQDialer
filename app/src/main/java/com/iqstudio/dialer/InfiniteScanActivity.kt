@@ -46,6 +46,7 @@ import kotlin.math.sin
 class InfiniteScanActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppTheme.pushDark()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -57,6 +58,11 @@ class InfiniteScanActivity : ComponentActivity() {
                 InfiniteScanScreen(onBack = { finish() })
             }
         }
+    }
+
+    override fun onDestroy() {
+        AppTheme.popDark()
+        super.onDestroy()
     }
 }
 

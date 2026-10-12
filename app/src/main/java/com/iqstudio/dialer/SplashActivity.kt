@@ -131,7 +131,7 @@ fun SplashScreen(onReady: () -> Unit) {
                     if (intent != null) roleLauncher.launch(intent)
                 },
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-            ) { Text("Set as default phone app", color = Color.White) }
+            ) { Text("Set as default phone app", color = ContentPrimary) }
         } else {
             Text("Default phone app: done", color = TextSecondary, modifier = Modifier.padding(bottom = 12.dp))
         }
@@ -140,7 +140,7 @@ fun SplashScreen(onReady: () -> Unit) {
             GlassButton(
                 onClick = { permissionLauncher.launch(requiredPermissions()) },
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-            ) { Text("Grant permissions", color = Color.White) }
+            ) { Text("Grant permissions", color = ContentPrimary) }
         } else {
             Text("Permissions: done", color = TextSecondary, modifier = Modifier.padding(bottom = 12.dp))
         }
@@ -155,7 +155,7 @@ fun SplashScreen(onReady: () -> Unit) {
                     overlayLauncher.launch(intent)
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Allow floating call bubble", color = Color.White) }
+            ) { Text("Allow floating call bubble", color = ContentPrimary) }
         } else {
             Text("Call bubble: done", color = TextSecondary)
         }

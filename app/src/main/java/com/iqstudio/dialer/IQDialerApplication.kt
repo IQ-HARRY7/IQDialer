@@ -5,7 +5,7 @@
 // * 
 //**************************************************
 
-// App.kt safety (debugging!)!
+// Application setup: interface mode, crash reporting and notification channels.
 
 package com.iqstudio.dialer
 
@@ -13,7 +13,6 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
-import android.util.Log
 
 const val INCOMING_CALL_CHANNEL_ID = "incoming_calls"
 const val INCOMING_CALL_NOTIFICATION_ID = 4001
@@ -22,12 +21,9 @@ class IQDialerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-// Logcat for app crashes (developer use only!) not a release stuff - @IQ_HARRY_07
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            Log.e("IQDialerCrash", "FATAL on thread ${thread.name}", throwable)
-            defaultHandler?.uncaughtException(thread, throwable)
-        }
+        VisualMode.load(this)
+        AppTheme.load(this)
+        CrashReporter.install(this)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
@@ -57,9 +53,8 @@ class IQDialerApplication : Application() {
             manager?.createNotificationChannel(bubbleChannel)
         }
 
-        Thread { BackgroundImageCache.get(applicationContext) }.start()
+        if (VisualMode.advanced) {
+            Thread { BackgroundImageCache.get(applicationContext) }.start()
+        }
     }
 }
-
-// Dead! 
-// it was never used btw 🥴

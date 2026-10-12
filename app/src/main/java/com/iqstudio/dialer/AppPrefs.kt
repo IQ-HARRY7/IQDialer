@@ -34,6 +34,10 @@ private const val KEY_PROXIMITY = "proximity_sensor"
 private const val KEY_MUTE_FIRST_RING = "mute_first_ring"
 private const val KEY_FLAGGED = "flagged_numbers"
 private const val KEY_CALL_NOTES = "call_notes"
+private const val KEY_ADVANCED_VISUALS = "advanced_visuals"
+private const val KEY_CRASH_ACK = "crash_acknowledged"
+private const val KEY_EXIT_CHECK = "exit_check"
+private const val KEY_THEME_CHOICE = "theme_choice"
 
 // NoEscape logic. 
 private const val FIELD_SEP = "\u001F"
@@ -243,6 +247,24 @@ object AppPrefs {
         val merged = if (existing.isNullOrEmpty()) record else existing + ITEM_SEP + record
         prefs(context).edit().putString(KEY_CALL_NOTES, merged).apply()
     }
+
+    fun advancedVisuals(context: Context): Boolean = prefs(context).getBoolean(KEY_ADVANCED_VISUALS, false)
+    fun setAdvancedVisuals(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_ADVANCED_VISUALS, value).apply()
+
+    fun crashAcknowledged(context: Context): Long = prefs(context).getLong(KEY_CRASH_ACK, 0L)
+    fun setCrashAcknowledged(context: Context, value: Long) = prefs(context).edit().putLong(KEY_CRASH_ACK, value).apply()
+
+    fun themeChoice(context: Context): ThemeChoice =
+        try {
+            ThemeChoice.valueOf(prefs(context).getString(KEY_THEME_CHOICE, ThemeChoice.System.name) ?: ThemeChoice.System.name)
+        } catch (e: IllegalArgumentException) {
+            ThemeChoice.System
+        }
+
+    fun setThemeChoice(context: Context, value: ThemeChoice) = prefs(context).edit().putString(KEY_THEME_CHOICE, value.name).apply()
+
+    fun lastExitCheck(context: Context): Long = prefs(context).getLong(KEY_EXIT_CHECK, 0L)
+    fun setLastExitCheck(context: Context, value: Long) = prefs(context).edit().putLong(KEY_EXIT_CHECK, value).apply()
 }
 
 
